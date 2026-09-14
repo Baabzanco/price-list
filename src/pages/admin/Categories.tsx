@@ -20,10 +20,10 @@ export function Categories() {
     setEditName('');
   };
 
-  const saveEdit = (id: string) => {
+  const saveEdit = async (id: string) => {
     if (!editName.trim()) return;
     try {
-      db.updateCategory(id, editName.trim());
+      await db.updateCategory(id, editName.trim());
       setToast({ type: 'success', message: 'دسته‌بندی با موفقیت ویرایش شد.' });
       setTimeout(() => setToast(null), 3000);
       setEditingId(null);
@@ -32,9 +32,13 @@ export function Categories() {
     }
   };
 
-  const toggleVisibility = (id: string) => {
-    db.toggleCategoryActive(id);
-    setToast({ type: 'success', message: 'وضعیت نمایش دسته‌بندی تغییر کرد.' });
+  const toggleVisibility = async (id: string) => {
+    try {
+      await db.toggleCategoryActive(id);
+      setToast({ type: 'success', message: 'وضعیت نمایش دسته‌بندی تغییر کرد.' });
+    } catch (e) {
+      setToast({ type: 'error', message: 'خطا در تغییر وضعیت دسته‌بندی.' });
+    }
     setTimeout(() => setToast(null), 3000);
   };
 

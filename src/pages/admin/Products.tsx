@@ -16,11 +16,11 @@ export function Products() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleAddProduct = (e: React.FormEvent) => {
+  const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProductName.trim() || !selectedCategory) return;
     try {
-      db.addProduct(selectedCategory, newProductName.trim());
+      await db.addProduct(selectedCategory, newProductName.trim());
       setNewProductName('');
       showToast('محصول جدید با موفقیت اضافه شد.');
     } catch (error) {
@@ -28,19 +28,19 @@ export function Products() {
     }
   };
 
-  const toggleVisibility = (id: string) => {
+  const toggleVisibility = async (id: string) => {
     try {
-      db.toggleProductActive(id);
+      await db.toggleProductActive(id);
       showToast('وضعیت نمایش محصول تغییر کرد.');
     } catch (error) {
       showToast('خطا در تغییر وضعیت محصول.', 'error');
     }
   };
 
-  const removeProduct = (id: string) => {
+  const removeProduct = async (id: string) => {
     if (confirm('آیا از حذف این محصول اطمینان دارید؟')) {
       try {
-        db.removeProduct(id);
+        await db.removeProduct(id);
         showToast('محصول با موفقیت حذف شد.');
       } catch (error) {
         showToast('خطا در حذف محصول.', 'error');

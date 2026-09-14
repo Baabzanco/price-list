@@ -12,10 +12,10 @@ export function Settings() {
   const lightLogoInputRef = useRef<HTMLInputElement>(null);
   const darkLogoInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      db.updateSettings(form);
+      await db.updateSettings(form);
       setToast({ type: 'success', message: 'تنظیمات با موفقیت ذخیره شد.' });
       setTimeout(() => setToast(null), 3000);
     } catch (e) {

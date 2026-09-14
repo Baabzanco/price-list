@@ -40,7 +40,7 @@ export function PriceEditor() {
     }));
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const updates = Object.keys(edits).map(id => ({
       id,
       priceLamb: edits[id].priceLamb,
@@ -48,7 +48,7 @@ export function PriceEditor() {
     }));
 
     try {
-      db.updateProductPrices(updates, 'admin');
+      await db.updateProductPrices(updates, 'admin');
       setToast({ type: 'success', message: 'قیمت‌ها با موفقیت بروزرسانی شدند.' });
       setTimeout(() => setToast(null), 3000);
     } catch (e) {

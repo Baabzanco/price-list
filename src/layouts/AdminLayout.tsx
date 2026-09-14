@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, FileText, Settings, History, Edit3, Menu, X, Printer, ListTree } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { db } from '../lib/db';
+import { useDB } from '../lib/useDB';
 import { ThemeToggle } from '../components/ThemeToggle';
 
 const navItems = [
@@ -17,7 +17,8 @@ const navItems = [
 export function AdminLayout() {
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const navigate = useNavigate();
-  const settings = db.getSettings();
+  const { settings } = useDB();
+
 
   return (
     <div className="min-h-screen bg-surface-50 dark:bg-surface-900 flex">
