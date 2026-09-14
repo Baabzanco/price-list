@@ -37,6 +37,11 @@ async function startServer() {
   api.get('/products', (req, res) => res.json(db.getProducts()));
   api.get('/products/category/:categoryId', (req, res) => res.json(db.getProductsByCategory(req.params.categoryId)));
   api.post('/products', (req, res) => res.json(db.addProduct(req.body.categoryId, req.body.name, req.body.hasLamb, req.body.hasTwoTeeth)));
+  api.put('/products/prices', (req, res) => {
+    db.updateProductPrices(req.body.updates, req.body.userId);
+    res.json({ success: true });
+  });
+
   api.put('/products/:id', (req, res) => {
     db.updateProduct(req.params.id, req.body.name, req.body.categoryId, req.body.hasLamb, req.body.hasTwoTeeth);
     res.json({ success: true });
@@ -49,11 +54,6 @@ async function startServer() {
     db.toggleProductActive(req.params.id);
     res.json({ success: true });
   });
-  api.put('/products/prices', (req, res) => {
-    db.updateProductPrices(req.body.updates, req.body.userId);
-    res.json({ success: true });
-  });
-
   // History
   api.get('/history', (req, res) => res.json(db.getPriceHistory()));
 
