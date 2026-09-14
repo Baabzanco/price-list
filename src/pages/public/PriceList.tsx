@@ -242,11 +242,11 @@ export function PriceList() {
       </div>
 
       {/* A4 Print Container */}
-      <div className={`flex-1 py-8 px-4 flex justify-center no-print-padding ${isExportMode ? '' : 'overflow-x-auto'}`}>
+      <div className={`flex-1 py-8 px-4 flex no-print-padding ${isExportMode ? 'justify-start' : 'justify-center overflow-x-auto'}`} dir="rtl">
         <div 
           ref={printRef}
-          className={`print-container bg-white dark:bg-[#124A57] shadow-xl mx-auto relative text-black dark:text-white flex flex-col ${
-            isExportMode ? 'w-[794px] min-w-[794px] min-h-[1123px]' : 'max-w-[210mm] w-full min-h-[280mm]'
+          className={`print-container bg-white dark:bg-[#124A57] shadow-xl text-black dark:text-white flex flex-col ${
+            isExportMode ? 'w-[794px] min-w-[794px] min-h-[1123px] m-0 absolute top-0 right-0 z-50' : 'max-w-[210mm] w-full min-h-[280mm] mx-auto relative'
           }`}
           style={{ padding: '10mm 15mm' }}
         >
