@@ -4,6 +4,9 @@ export interface Category {
   name: string;
   isActive: boolean;
   sortOrder: number;
+  parentId: string | null;
+  hasLamb: boolean;
+  hasTwoTeeth: boolean;
 }
 
 export interface Product {
@@ -16,6 +19,8 @@ export interface Product {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  hasLamb: boolean;
+  hasTwoTeeth: boolean;
 }
 
 export interface PriceHistory {
@@ -67,18 +72,18 @@ class APIClient {
   async getCategories(): Promise<Category[]> {
     return this.request<Category[]>('/categories');
   }
-  async addCategory(name: string): Promise<Category> {
+  async addCategory(name: string, parentId: string | null = null, hasLamb: boolean = true, hasTwoTeeth: boolean = true): Promise<Category> {
     const res = await this.request<Category>('/categories', {
       method: 'POST',
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ name, parentId, hasLamb, hasTwoTeeth })
     });
     this.notify();
     return res;
   }
-  async updateCategory(id: string, name: string): Promise<void> {
+  async updateCategory(id: string, name: string, parentId: string | null = null, hasLamb: boolean = true, hasTwoTeeth: boolean = true): Promise<void> {
     await this.request<void>(`/categories/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name })
+      body: JSON.stringify({ name, parentId, hasLamb, hasTwoTeeth })
     });
     this.notify();
   }
@@ -94,13 +99,20 @@ class APIClient {
   async getProductsByCategory(categoryId: string): Promise<Product[]> {
     return this.request<Product[]>(`/products/category/${categoryId}`);
   }
-  async addProduct(categoryId: string, name: string): Promise<Product> {
+  async addProduct(categoryId: string, name: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true): Promise<Product> {
     const res = await this.request<Product>('/products', {
       method: 'POST',
-      body: JSON.stringify({ categoryId, name })
+      body: JSON.stringify({ categoryId, name, hasLamb, hasTwoTeeth })
     });
     this.notify();
     return res;
+  }
+  async updateProduct(id: string, name: string, categoryId: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true): Promise<void> {
+    await this.request<void>(`/products/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name, categoryId, hasLamb, hasTwoTeeth })
+    });
+    this.notify();
   }
   async removeProduct(id: string): Promise<void> {
     await this.request<void>(`/products/${id}`, { method: 'DELETE' });

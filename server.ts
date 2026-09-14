@@ -23,9 +23,9 @@ async function startServer() {
 
   // Categories
   api.get('/categories', (req, res) => res.json(db.getCategories()));
-  api.post('/categories', (req, res) => res.json(db.addCategory(req.body.name)));
+  api.post('/categories', (req, res) => res.json(db.addCategory(req.body.name, req.body.parentId, req.body.hasLamb, req.body.hasTwoTeeth)));
   api.put('/categories/:id', (req, res) => {
-    db.updateCategory(req.params.id, req.body.name);
+    db.updateCategory(req.params.id, req.body.name, req.body.parentId, req.body.hasLamb, req.body.hasTwoTeeth);
     res.json({ success: true });
   });
   api.patch('/categories/:id/toggle', (req, res) => {
@@ -36,7 +36,11 @@ async function startServer() {
   // Products
   api.get('/products', (req, res) => res.json(db.getProducts()));
   api.get('/products/category/:categoryId', (req, res) => res.json(db.getProductsByCategory(req.params.categoryId)));
-  api.post('/products', (req, res) => res.json(db.addProduct(req.body.categoryId, req.body.name)));
+  api.post('/products', (req, res) => res.json(db.addProduct(req.body.categoryId, req.body.name, req.body.hasLamb, req.body.hasTwoTeeth)));
+  api.put('/products/:id', (req, res) => {
+    db.updateProduct(req.params.id, req.body.name, req.body.categoryId, req.body.hasLamb, req.body.hasTwoTeeth);
+    res.json({ success: true });
+  });
   api.delete('/products/:id', (req, res) => {
     db.removeProduct(req.params.id);
     res.json({ success: true });

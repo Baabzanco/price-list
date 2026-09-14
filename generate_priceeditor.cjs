@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+const fs = require('fs');
+
+const content = `import { useState, useEffect, useMemo } from 'react';
 import { useDB } from '../../lib/useDB';
 import { db, Category } from '../../lib/db';
 import { Save, AlertCircle, CheckCircle2, Zap, Search } from 'lucide-react';
@@ -31,7 +33,7 @@ export function PriceEditor() {
   }, [products]);
 
   const handlePriceChange = (productId: string, type: 'priceLamb' | 'priceTwoTeeth', val: string) => {
-    const num = val === '' ? null : parseInt(val.replace(/\D/g, ''), 10);
+    const num = val === '' ? null : parseInt(val.replace(/\\D/g, ''), 10);
     setEdits(prev => ({
       ...prev,
       [productId]: {
@@ -177,7 +179,7 @@ export function PriceEditor() {
             <option value="all">همه دسته‌ها</option>
             {orderedCategories.map(cat => (
               <option key={cat.id} value={cat.id}>
-                {'  '.repeat(cat.depth)}{cat.name}
+                {'\u00A0\u00A0'.repeat(cat.depth)}{cat.name}
               </option>
             ))}
           </select>
@@ -254,7 +256,7 @@ export function PriceEditor() {
           if (categoryProducts.length === 0) return null;
 
           return (
-            <div key={category.id} className="bg-white dark:bg-surface-900 rounded-2xl border border-surface-200 dark:border-surface-800 shadow-sm overflow-hidden" style={{ marginRight: `${category.depth}rem` }}>
+            <div key={category.id} className="bg-white dark:bg-surface-900 rounded-2xl border border-surface-200 dark:border-surface-800 shadow-sm overflow-hidden" style={{ marginRight: \`\${category.depth}rem\` }}>
               <div className="px-6 py-4 bg-surface-50 dark:bg-surface-800/50 border-b border-surface-200 dark:border-surface-800">
                 <h3 className="font-bold text-lg text-primary dark:text-white">{category.name}</h3>
               </div>
@@ -379,3 +381,5 @@ export function PriceEditor() {
     </div>
   );
 }
+`;
+fs.writeFileSync('src/pages/admin/PriceEditor.tsx', content);

@@ -7,6 +7,9 @@ export interface Category {
   name: string;
   isActive: boolean;
   sortOrder: number;
+  parentId: string | null;
+  hasLamb: boolean;
+  hasTwoTeeth: boolean;
 }
 
 export interface Product {
@@ -47,11 +50,11 @@ export interface Settings {
 }
 
 const SEED_CATEGORIES: Category[] = [
-  { id: 'cat_1', name: 'گوسفندی', isActive: true, sortOrder: 1 },
-  { id: 'cat_2', name: 'استخوان دار گوسفندی', isActive: true, sortOrder: 2 },
-  { id: 'cat_3', name: 'آلایشات', isActive: true, sortOrder: 3 },
-  { id: 'cat_4', name: 'گوساله جوانه', isActive: true, sortOrder: 4 },
-  { id: 'cat_5', name: 'مرغ', isActive: true, sortOrder: 5 },
+  { id: 'cat_1', name: 'گوسفندی', isActive: true, sortOrder: 1, parentId: null, hasLamb: true, hasTwoTeeth: true },
+  { id: 'cat_2', name: 'استخوان دار گوسفندی', isActive: true, sortOrder: 2, parentId: null, hasLamb: true, hasTwoTeeth: true },
+  { id: 'cat_3', name: 'آلایشات', isActive: true, sortOrder: 3, parentId: null, hasLamb: true, hasTwoTeeth: true },
+  { id: 'cat_4', name: 'گوساله جوانه', isActive: true, sortOrder: 4, parentId: null, hasLamb: true, hasTwoTeeth: true },
+  { id: 'cat_5', name: 'مرغ', isActive: true, sortOrder: 5, parentId: null, hasLamb: true, hasTwoTeeth: true },
 ];
 
 const SEED_PRODUCTS_RAW = [
@@ -150,7 +153,10 @@ export function initDb() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       isActive INTEGER NOT NULL DEFAULT 1,
-      sortOrder INTEGER NOT NULL
+      sortOrder INTEGER NOT NULL,
+      parentId TEXT,
+      hasLamb INTEGER NOT NULL DEFAULT 1,
+      hasTwoTeeth INTEGER NOT NULL DEFAULT 1
     );
 
     CREATE TABLE IF NOT EXISTS products (
@@ -163,6 +169,8 @@ export function initDb() {
       sortOrder INTEGER NOT NULL,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
+      hasLamb INTEGER NOT NULL DEFAULT 1,
+      hasTwoTeeth INTEGER NOT NULL DEFAULT 1,
       FOREIGN KEY(categoryId) REFERENCES categories(id) ON DELETE CASCADE
     );
 
@@ -182,16 +190,21 @@ export function initDb() {
       value TEXT NOT NULL
     );
   `);
+  try { db.prepare("ALTER TABLE categories ADD COLUMN parentId TEXT").run(); } catch(e){}
+  try { db.prepare("ALTER TABLE categories ADD COLUMN hasLamb INTEGER NOT NULL DEFAULT 1").run(); } catch(e){}
+  try { db.prepare("ALTER TABLE categories ADD COLUMN hasTwoTeeth INTEGER NOT NULL DEFAULT 1").run(); } catch(e){}
+  try { db.prepare("ALTER TABLE products ADD COLUMN hasLamb INTEGER NOT NULL DEFAULT 1").run(); } catch(e){}
+  try { db.prepare("ALTER TABLE products ADD COLUMN hasTwoTeeth INTEGER NOT NULL DEFAULT 1").run(); } catch(e){}
 
   // Seed data if empty
   const categoryCount = db.prepare('SELECT count(*) as count FROM categories').get() as { count: number };
   if (categoryCount.count === 0) {
-    const insertCategory = db.prepare('INSERT INTO categories (id, name, isActive, sortOrder) VALUES (?, ?, ?, ?)');
-    const insertProduct = db.prepare('INSERT INTO products (id, categoryId, name, priceLamb, priceTwoTeeth, isActive, sortOrder, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const insertCategory = db.prepare('INSERT INTO categories (id, name, isActive, sortOrder, parentId, hasLamb, hasTwoTeeth) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const insertProduct = db.prepare('INSERT INTO products (id, categoryId, name, priceLamb, priceTwoTeeth, isActive, sortOrder, createdAt, updatedAt, hasLamb, hasTwoTeeth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     const transaction = db.transaction(() => {
       for (const cat of SEED_CATEGORIES) {
-        insertCategory.run(cat.id, cat.name, cat.isActive ? 1 : 0, cat.sortOrder);
+        insertCategory.run(cat.id, cat.name, cat.isActive ? 1 : 0, cat.sortOrder, cat.parentId || null, cat.hasLamb ? 1 : 0, cat.hasTwoTeeth ? 1 : 0);
       }
       for (const prod of SEED_PRODUCTS) {
         insertProduct.run(prod.id, prod.categoryId, prod.name, prod.priceLamb, prod.priceTwoTeeth, prod.isActive ? 1 : 0, prod.sortOrder, prod.createdAt, prod.updatedAt);
@@ -205,18 +218,22 @@ export function initDb() {
 
 export function getCategories(): Category[] {
   const rows = db.prepare('SELECT * FROM categories ORDER BY sortOrder ASC').all();
-  return rows.map((r: any) => ({ ...r, isActive: !!r.isActive }));
+  return rows.map((r: any) => ({ ...r, isActive: !!r.isActive, hasLamb: !!r.hasLamb, hasTwoTeeth: !!r.hasTwoTeeth }));
 }
 
-export function addCategory(name: string): Category {
+export function addCategory(name: string, parentId: string | null = null, hasLamb: boolean = true, hasTwoTeeth: boolean = true): Category {
   const sortOrder = db.prepare('SELECT COALESCE(MAX(sortOrder), 0) + 1 as nextSort FROM categories').get() as { nextSort: number };
   const id = uuidv4();
-  db.prepare('INSERT INTO categories (id, name, isActive, sortOrder) VALUES (?, ?, 1, ?)').run(id, name, sortOrder.nextSort);
-  return { id, name, isActive: true, sortOrder: sortOrder.nextSort };
+  db.prepare('INSERT INTO categories (id, name, isActive, sortOrder, parentId, hasLamb, hasTwoTeeth) VALUES (?, ?, 1, ?, ?, ?, ?)').run(
+    id, name, sortOrder.nextSort, parentId, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0
+  );
+  return { id, name, isActive: true, sortOrder: sortOrder.nextSort, parentId, hasLamb, hasTwoTeeth };
 }
 
-export function updateCategory(id: string, name: string) {
-  db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(name, id);
+export function updateCategory(id: string, name: string, parentId: string | null = null, hasLamb: boolean = true, hasTwoTeeth: boolean = true) {
+  db.prepare('UPDATE categories SET name = ?, parentId = ?, hasLamb = ?, hasTwoTeeth = ? WHERE id = ?').run(
+    name, parentId, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0, id
+  );
 }
 
 export function toggleCategoryActive(id: string) {
@@ -233,15 +250,15 @@ export function getProductsByCategory(categoryId: string): Product[] {
   return rows.map((r: any) => ({ ...r, isActive: !!r.isActive }));
 }
 
-export function addProduct(categoryId: string, name: string): Product {
+export function addProduct(categoryId: string, name: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true): Product {
   const sortOrder = db.prepare('SELECT COALESCE(MAX(sortOrder), 0) + 1 as nextSort FROM products WHERE categoryId = ?').get(categoryId) as { nextSort: number };
   const id = `p_${uuidv4()}`;
   const now = new Date().toISOString();
-  db.prepare('INSERT INTO products (id, categoryId, name, isActive, sortOrder, createdAt, updatedAt) VALUES (?, ?, ?, 1, ?, ?, ?)')
-    .run(id, categoryId, name, sortOrder.nextSort, now, now);
+  db.prepare('INSERT INTO products (id, categoryId, name, isActive, sortOrder, createdAt, updatedAt, hasLamb, hasTwoTeeth) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)')
+    .run(id, categoryId, name, sortOrder.nextSort, now, now, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0);
   
   return {
-    id, categoryId, name, priceLamb: null, priceTwoTeeth: null, isActive: true, sortOrder: sortOrder.nextSort, createdAt: now, updatedAt: now
+    id, categoryId, name, priceLamb: null, priceTwoTeeth: null, isActive: true, sortOrder: sortOrder.nextSort, createdAt: now, updatedAt: now, hasLamb, hasTwoTeeth
   };
 }
 
@@ -251,6 +268,11 @@ export function removeProduct(id: string) {
 
 export function toggleProductActive(id: string) {
   db.prepare('UPDATE products SET isActive = NOT isActive WHERE id = ?').run(id);
+}
+
+export function updateProduct(id: string, name: string, categoryId: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true) {
+  const now = new Date().toISOString();
+  db.prepare('UPDATE products SET name = ?, categoryId = ?, updatedAt = ?, hasLamb = ?, hasTwoTeeth = ? WHERE id = ?').run(name, categoryId, now, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0, id);
 }
 
 export function updateProductPrices(updates: { id: string; priceLamb: number | null; priceTwoTeeth: number | null }[], userId: string) {
@@ -330,12 +352,12 @@ export function runMigration(data: any) {
     db.prepare('DELETE FROM categories').run();
     db.prepare('DELETE FROM settings').run();
     
-    const insertCategory = db.prepare('INSERT INTO categories (id, name, isActive, sortOrder) VALUES (?, ?, ?, ?)');
+    const insertCategory = db.prepare('INSERT INTO categories (id, name, isActive, sortOrder, parentId, hasLamb, hasTwoTeeth) VALUES (?, ?, ?, ?, ?, ?, ?)');
     for (const cat of data.categories) {
-      insertCategory.run(cat.id, cat.name, cat.isActive ? 1 : 0, cat.sortOrder);
+      insertCategory.run(cat.id, cat.name, cat.isActive ? 1 : 0, cat.sortOrder, cat.parentId || null, cat.hasLamb ? 1 : 0, cat.hasTwoTeeth ? 1 : 0);
     }
     
-    const insertProduct = db.prepare('INSERT INTO products (id, categoryId, name, priceLamb, priceTwoTeeth, isActive, sortOrder, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const insertProduct = db.prepare('INSERT INTO products (id, categoryId, name, priceLamb, priceTwoTeeth, isActive, sortOrder, createdAt, updatedAt, hasLamb, hasTwoTeeth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     for (const prod of data.products) {
       insertProduct.run(prod.id, prod.categoryId, prod.name, prod.priceLamb, prod.priceTwoTeeth, prod.isActive ? 1 : 0, prod.sortOrder, prod.createdAt, prod.updatedAt);
     }
