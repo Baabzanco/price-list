@@ -1,0 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700;900&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-primary: #124A57;
+  --color-primary-hover: #0c333c;
+  --color-secondary: #CD78B3;
+  --color-secondary-hover: #b8629f;
+  
+  --color-surface-50: #f8fafc;
+  --color-surface-100: #f1f5f9;
+  --color-surface-200: #e2e8f0;
+  --color-surface-300: #cbd5e1;
+  --color-surface-800: #1e293b;
+  --color-surface-900: #0f172a;
+  
+  --font-sans: 'Vazirmatn', system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    font-family: 'Vazirmatn', system-ui, sans-serif;
+    background-color: var(--color-surface-50);
+    color: var(--color-surface-900);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  
+  .dark body {
+    background-color: #124A57;
+    color: #ffffff;
+  }
+  
+  input, select, textarea, button {
+    font-family: 'Vazirmatn', system-ui, sans-serif;
+  }
+}
+
+/* Print Styles */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 5mm;
+  }
+  
+  html, body {
+    width: 210mm;
+    height: auto;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  html:not(.dark), html:not(.dark) body {
+    background-color: white !important;
+    color: black !important;
+  }
+  
+  html.dark, html.dark body {
+    background-color: #124A57 !important;
+    color: white !important;
+  }
+  
+  /* Hide UI elements */
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Reset print container to span full page width seamlessly */
+  .print-container {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 5mm !important;
+    box-shadow: none !important;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Ensure grids don't overflow */
+  .print-grid {
+    gap: 4mm !important;
+  }
+  
+  /* Force background colors on print */
+  .print-bg, .print-bg * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  
+  /* Compact tables for print */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  
+  th, td {
+    padding: 2px 4px !important;
+    font-size: 10px !important;
+  }
+}
