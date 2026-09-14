@@ -207,7 +207,19 @@ export function initDb() {
         insertCategory.run(cat.id, cat.name, cat.isActive ? 1 : 0, cat.sortOrder, cat.parentId || null, cat.hasLamb ? 1 : 0, cat.hasTwoTeeth ? 1 : 0);
       }
       for (const prod of SEED_PRODUCTS) {
-        insertProduct.run(prod.id, prod.categoryId, prod.name, prod.priceLamb, prod.priceTwoTeeth, prod.isActive ? 1 : 0, prod.sortOrder, prod.createdAt, prod.updatedAt);
+        insertProduct.run(
+  prod.id,
+  prod.categoryId,
+  prod.name,
+  prod.priceLamb,
+  prod.priceTwoTeeth,
+  prod.isActive ? 1 : 0,
+  prod.sortOrder,
+  prod.createdAt,
+  prod.updatedAt,
+  prod.hasLamb ? 1 : 0,
+  prod.hasTwoTeeth ? 1 : 0
+);
       }
       db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('app_settings', JSON.stringify(DEFAULT_SETTINGS));
     });
