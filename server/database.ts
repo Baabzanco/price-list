@@ -47,6 +47,8 @@ export interface Settings {
   secondaryColor: string;
   currency: string;
   lastUpdated: string | null;
+  footerTextRight?: string;
+  footerTextLeft?: string;
 }
 
 const SEED_CATEGORIES: Category[] = [
@@ -138,6 +140,8 @@ const DEFAULT_SETTINGS: Settings = {
   secondaryColor: '#CD78B3',
   currency: 'هزار تومان',
   lastUpdated: null,
+  footerTextRight: 'پاسخگویی از ساعت',
+  footerTextLeft: 'تماس با خط ویژه:',
 };
 
 const dbPath = path.join(process.cwd(), 'data', 'database.sqlite');

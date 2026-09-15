@@ -46,6 +46,8 @@ export interface Settings {
   secondaryColor: string;
   currency: string;
   lastUpdated: string | null;
+  footerTextRight?: string;
+  footerTextLeft?: string;
 }
 
 class APIClient {

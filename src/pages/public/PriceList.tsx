@@ -76,10 +76,18 @@ export function PriceList() {
     
     if (colIndex === 1) {
       // Column 1 style
-      if (category.hasLamb && category.hasTwoTeeth) {
+      if (depth === 0) {
+        headerRow = (
+          <tr className="bg-[#124A57] text-white">
+            <td colSpan={3} className="py-2.5 px-2 font-black text-xl text-center">
+              {category.name}
+            </td>
+          </tr>
+        );
+      } else if (category.hasLamb && category.hasTwoTeeth) {
         headerRow = (
           <tr className="bg-[#CD78B3] dark:bg-[#d85c96] text-white">
-            <td className={`py-1.5 px-3 font-black text-right border-l border-white/30 w-[65%] ${depth === 0 ? 'text-[14px]' : 'text-[13px]'}`}>
+            <td className={`py-1.5 px-3 font-black text-right border-l border-white/30 w-[65%] ${depth === 1 ? 'text-[14px]' : 'text-[13px]'}`}>
               {'\u00A0\u00A0'.repeat(depth)}{category.name}
             </td>
             <td className="py-1.5 px-1 font-bold w-[17.5%] border-l border-white/30 text-center text-[12px]">بره</td>
@@ -89,7 +97,7 @@ export function PriceList() {
       } else {
         headerRow = (
           <tr className="bg-[#CD78B3] dark:bg-[#d85c96] text-white">
-            <td colSpan={3} className={`py-1.5 px-3 font-black text-right ${depth === 0 ? 'text-[14px]' : 'text-[13px]'}`}>
+            <td colSpan={3} className={`py-1.5 px-3 font-black text-right ${depth === 1 ? 'text-[14px]' : 'text-[13px]'}`}>
               {'\u00A0\u00A0'.repeat(depth)}{category.name}
             </td>
           </tr>
@@ -312,11 +320,7 @@ export function PriceList() {
             {/* Column 1 (Right Side in Persian RTL): Gousfandi, Raste, Khoreshti */}
             <div className="flex flex-col h-full border-[3px] border-[#CD78B3] dark:border-[#d85c96] rounded-xl overflow-hidden shadow-sm bg-white">
               <table className="w-full h-full text-center text-[13px] font-medium bg-white">
-                <thead>
-                  <tr className="bg-[#124A57] text-white">
-                    <th colSpan={3} className="py-2.5 px-2 font-black text-xl">اقلام گوسفندی</th>
-                  </tr>
-                </thead>
+                
                 <tbody className="divide-y divide-gray-300">
                   {col1RootCategories.map(cat => renderCategoryRecursive(cat, 1, 0))}
                 </tbody>
@@ -337,10 +341,10 @@ export function PriceList() {
           {/* Footer */}
           <footer className="flex-none mt-6 pt-4 border-t-2 border-[#124A57] dark:border-white/20 flex justify-between items-center text-lg font-bold page-break-avoid text-[#124A57] dark:text-white">
             <div className="flex items-center bg-gray-50 dark:bg-white/10 px-5 py-2.5 rounded-xl border border-gray-100 dark:border-transparent">
-              پاسخگویی از ساعت <span className="mr-2 text-[#CD78B3] dark:text-[#d85c96] tracking-wide">{settings.hours}</span>
+              {settings.footerTextRight || 'پاسخگویی از ساعت'} <span className="mr-2 text-[#CD78B3] dark:text-[#d85c96] tracking-wide">{settings.hours}</span>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xl">تماس با خط ویژه:</span>
+              <span className="text-xl">{settings.footerTextLeft || 'تماس با خط ویژه:'}</span>
               <span dir="ltr" className="text-2xl font-black text-[#CD78B3] dark:text-[#d85c96] tracking-widest bg-gray-50 dark:bg-white/10 px-5 py-2.5 rounded-xl border border-gray-100 dark:border-transparent">
                 {settings.phone}
               </span>

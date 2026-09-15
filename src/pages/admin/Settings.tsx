@@ -94,6 +94,17 @@ export function Settings() {
             </div>
 
             <div className="space-y-2">
+              <label className="text-sm font-medium text-surface-700 dark:text-surface-300">متن کنار شماره تماس</label>
+              <input
+                type="text"
+                value={form.footerTextLeft ?? ''}
+                onChange={e => setForm({ ...form, footerTextLeft: e.target.value })}
+                className="w-full px-4 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 dark:bg-surface-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                placeholder="تماس با خط ویژه:"
+              />
+            </div>
+
+            <div className="space-y-2">
               <label className="text-sm font-medium text-surface-700 dark:text-surface-300">شماره تماس (نمایش در فوتر)</label>
               <input
                 type="text"
@@ -102,6 +113,17 @@ export function Settings() {
                 className="w-full px-4 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 dark:bg-surface-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                 dir="ltr"
                 style={{ textAlign: 'right' }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-surface-700 dark:text-surface-300">متن کنار ساعات پاسخگویی</label>
+              <input
+                type="text"
+                value={form.footerTextRight ?? ''}
+                onChange={e => setForm({ ...form, footerTextRight: e.target.value })}
+                className="w-full px-4 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 dark:bg-surface-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                placeholder="پاسخگویی از ساعت"
               />
             </div>
 
