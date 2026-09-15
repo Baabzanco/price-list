@@ -133,7 +133,7 @@ export function PriceList() {
             let priceCells;
             if (!product.hasLamb && !product.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black dark:text-white w-[35%] ">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%] ">
                   {product.priceLamb ? formatNumber(product.priceLamb) : (product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-')}
                 </td>
               );
@@ -150,13 +150,13 @@ export function PriceList() {
               );
             } else if (category.hasLamb) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black dark:text-white w-[35%] ">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%] ">
                   {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                 </td>
               );
             } else if (category.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black dark:text-white w-[35%] ">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%] ">
                   {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
                 </td>
               );
@@ -181,24 +181,24 @@ export function PriceList() {
             let priceCells;
             if (!product.hasLamb && !product.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black dark:text-white w-[35%]">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%]">
                   {product.priceLamb ? formatNumber(product.priceLamb) : (product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-')}
                 </td>
               );
             } else if (category.hasLamb && category.hasTwoTeeth) {
               priceCells = (
                 <>
-                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center text-[15px] text-black dark:text-white w-[17.5%]">
+                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center text-[15px] text-black w-[17.5%]">
                     {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                   </td>
-                  <td className="py-1 px-1 font-bold text-center text-[15px] text-black dark:text-white w-[17.5%]">
+                  <td className="py-1 px-1 font-bold text-center text-[15px] text-black w-[17.5%]">
                     {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
                   </td>
                 </>
               );
             } else if (category.hasLamb || category.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-2 font-bold text-center text-[15px] text-black dark:text-white w-[35%]">
+                <td colSpan={2} className="py-1 px-2 font-bold text-center text-[15px] text-black w-[35%]">
                   {formatNumber(product.priceLamb || product.priceTwoTeeth)}
                 </td>
               );
@@ -269,7 +269,7 @@ export function PriceList() {
       <div className={`flex-1 py-8 px-4 flex no-print-padding ${isExportMode ? 'justify-center' : 'justify-center overflow-x-auto'}`} dir="rtl">
         <div 
           ref={printRef}
-          className={`print-container bg-white dark:bg-[#124A57] shadow-xl text-black dark:text-white flex flex-col ${
+          className={`print-container bg-white dark:bg-[#124A57] shadow-xl text-black flex flex-col ${
             isExportMode ? 'w-[794px] min-w-[794px] min-h-[1123px]' : 'max-w-[210mm] w-full min-h-[280mm] mx-auto'
           }`}
           style={{ padding: '10mm 15mm' }}
