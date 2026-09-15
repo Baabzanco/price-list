@@ -133,7 +133,7 @@ export function PriceList() {
             let priceCells;
             if (!product.hasLamb && !product.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3] w-[35%] ">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black dark:text-white w-[35%] ">
                   {product.priceLamb ? formatNumber(product.priceLamb) : (product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-')}
                 </td>
               );
@@ -150,13 +150,13 @@ export function PriceList() {
               );
             } else if (category.hasLamb) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3] w-[35%] ">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black dark:text-white w-[35%] ">
                   {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                 </td>
               );
             } else if (category.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3] w-[35%] ">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black dark:text-white w-[35%] ">
                   {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
                 </td>
               );
