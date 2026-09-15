@@ -130,6 +130,14 @@ class APIClient {
     this.notify();
   }
 
+  async reorderProducts(updates: { id: string; sortOrder: number }[]): Promise<void> {
+    await this.request<void>('/products/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ updates })
+    });
+    this.notify();
+  }
+
   // History
   async getPriceHistory(): Promise<PriceHistory[]> {
     return this.request<PriceHistory[]>('/history');

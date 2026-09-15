@@ -42,6 +42,11 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  api.put('/products/reorder', (req, res) => {
+    db.reorderProducts(req.body.updates);
+    res.json({ success: true });
+  });
+
   api.put('/products/:id', (req, res) => {
     db.updateProduct(req.params.id, req.body.name, req.body.categoryId, req.body.hasLamb, req.body.hasTwoTeeth);
     res.json({ success: true });

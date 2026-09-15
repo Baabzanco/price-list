@@ -278,6 +278,16 @@ export function removeProduct(id: string) {
   db.prepare('DELETE FROM products WHERE id = ?').run(id);
 }
 
+export function reorderProducts(updates: { id: string, sortOrder: number }[]) {
+  const stmt = db.prepare('UPDATE products SET sortOrder = ? WHERE id = ?');
+  const transaction = db.transaction((updates) => {
+    for (const update of updates) {
+      stmt.run(update.sortOrder, update.id);
+    }
+  });
+  transaction(updates);
+}
+
 export function toggleProductActive(id: string) {
   db.prepare('UPDATE products SET isActive = NOT isActive WHERE id = ?').run(id);
 }

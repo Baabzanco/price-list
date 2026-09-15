@@ -55,6 +55,12 @@ export function PriceList() {
     }
   };
 
+  const getFitTextClass = (name: string) => {
+    if (name.length > 25) return 'text-[11.5px] leading-tight whitespace-normal break-words';
+    if (name.length > 18) return 'text-[12px] leading-snug whitespace-normal break-words';
+    return 'text-[13px] whitespace-normal';
+  };
+
   const renderCategoryRecursive = (
     category: Category, 
     colIndex: number, 
@@ -70,13 +76,25 @@ export function PriceList() {
     
     if (colIndex === 1) {
       // Column 1 style
-      headerRow = (
-        <tr className="bg-gray-100 dark:bg-gray-200">
-          <td colSpan={3} className={`py-1.5 px-3 font-black text-right text-[#124A57] ${depth === 0 ? 'text-[14px]' : 'text-[13px]'}`}>
-            {'  '.repeat(depth)}{category.name}
-          </td>
-        </tr>
-      );
+      if (category.hasLamb && category.hasTwoTeeth) {
+        headerRow = (
+          <tr className="bg-[#CD78B3] dark:bg-[#d85c96] text-white">
+            <td className={`py-1.5 px-3 font-black text-right border-l border-white/30 w-[65%] ${depth === 0 ? 'text-[14px]' : 'text-[13px]'}`}>
+              {'\u00A0\u00A0'.repeat(depth)}{category.name}
+            </td>
+            <td className="py-1.5 px-1 font-bold w-[17.5%] border-l border-white/30 text-center text-[12px]">بره</td>
+            <td className="py-1.5 px-1 font-bold w-[17.5%] text-center text-[12px]">دودندان</td>
+          </tr>
+        );
+      } else {
+        headerRow = (
+          <tr className="bg-[#CD78B3] dark:bg-[#d85c96] text-white">
+            <td colSpan={3} className={`py-1.5 px-3 font-black text-right ${depth === 0 ? 'text-[14px]' : 'text-[13px]'}`}>
+              {'\u00A0\u00A0'.repeat(depth)}{category.name}
+            </td>
+          </tr>
+        );
+      }
     } else {
       // Column 2 style
       if (depth === 0) {
@@ -107,36 +125,36 @@ export function PriceList() {
             let priceCells;
             if (!product.hasLamb && !product.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3]">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3] w-[35%] ">
                   {product.priceLamb ? formatNumber(product.priceLamb) : (product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-')}
                 </td>
               );
             } else if (category.hasLamb && category.hasTwoTeeth) {
               priceCells = (
                 <>
-                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center">
+                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center w-[17.5%]">
                     {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                   </td>
-                  <td className="py-1 px-1 font-bold text-center">
+                  <td className="py-1 px-1 font-bold text-center w-[17.5%]">
                     {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
                   </td>
                 </>
               );
             } else if (category.hasLamb) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3]">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3] w-[35%] ">
                   {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                 </td>
               );
             } else if (category.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3]">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3] w-[35%] ">
                   {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
                 </td>
               );
             } else {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-gray-400">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-gray-400 w-[35%] ">
                   -
                 </td>
               );
@@ -144,8 +162,8 @@ export function PriceList() {
 
             return (
               <tr key={product.id} className="text-black">
-                <td className="py-1 px-3 font-bold text-right border-l border-gray-300 w-[50%]">
-                  {'  '.repeat(depth)}{product.name}
+                <td className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[65%] overflow-hidden ${getFitTextClass(product.name)}`}>
+                  {'\u00A0\u00A0'.repeat(depth)}{product.name}
                 </td>
                 {priceCells}
               </tr>
@@ -155,30 +173,30 @@ export function PriceList() {
             let priceCells;
             if (!product.hasLamb && !product.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3]">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black dark:text-white w-[35%]">
                   {product.priceLamb ? formatNumber(product.priceLamb) : (product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-')}
                 </td>
               );
             } else if (category.hasLamb && category.hasTwoTeeth) {
               priceCells = (
                 <>
-                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center text-[15px] text-[#CD78B3]">
+                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center text-[15px] text-black dark:text-white w-[17.5%]">
                     {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                   </td>
-                  <td className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3]">
+                  <td className="py-1 px-1 font-bold text-center text-[15px] text-black dark:text-white w-[17.5%]">
                     {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
                   </td>
                 </>
               );
             } else if (category.hasLamb || category.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-2 font-bold text-center text-[15px] text-[#CD78B3]">
+                <td colSpan={2} className="py-1 px-2 font-bold text-center text-[15px] text-black dark:text-white w-[35%]">
                   {formatNumber(product.priceLamb || product.priceTwoTeeth)}
                 </td>
               );
             } else {
               priceCells = (
-                <td colSpan={2} className="py-1 px-2 font-bold text-center text-gray-400">
+                <td colSpan={2} className="py-1 px-2 font-bold text-center text-gray-400 w-[35%]">
                   -
                 </td>
               );
@@ -186,8 +204,8 @@ export function PriceList() {
 
             return (
               <tr key={product.id} className="text-black">
-                <td className="py-1 px-3 font-bold text-right border-l border-gray-300 w-[50%]">
-                  {'  '.repeat(depth)}{product.name}
+                <td className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[65%] overflow-hidden ${getFitTextClass(product.name)}`}>
+                  {'\u00A0\u00A0'.repeat(depth)}{product.name}
                 </td>
                 {priceCells}
               </tr>
@@ -265,9 +283,9 @@ export function PriceList() {
 
             {/* Middle Column: Date */}
             <div className="flex-[0.5] flex justify-center items-center">
-              <div className="text-center flex flex-col items-center justify-center gap-1 bg-gray-50 dark:bg-white/10 px-3 py-1.5 rounded-xl border border-gray-100 dark:border-transparent">
-                <span className="text-[10px] font-bold text-gray-500 dark:text-gray-300">تاریخ:</span>
-                <span className="text-xs font-black text-[#124A57] dark:text-white tracking-wide" dir="ltr">
+              <div className="text-center flex flex-col items-center justify-center gap-1 bg-gray-50 dark:bg-white/10 px-4 py-2 rounded-xl border border-gray-100 dark:border-transparent shadow-sm">
+                <span className="text-xs font-bold text-gray-500 dark:text-gray-300">تاریخ:</span>
+                <span className="text-lg font-black text-[#124A57] dark:text-white tracking-wide" dir="ltr">
                   {formatPersianDate(settings.lastUpdated || new Date().toISOString()).split(' ')[0]}
                 </span>
               </div>
@@ -297,11 +315,6 @@ export function PriceList() {
                 <thead>
                   <tr className="bg-[#124A57] text-white">
                     <th colSpan={3} className="py-2.5 px-2 font-black text-xl">اقلام گوسفندی</th>
-                  </tr>
-                  <tr className="bg-[#CD78B3] dark:bg-[#d85c96] text-white">
-                    <th className="py-1.5 px-3 font-bold w-[50%] text-right border-l border-white/30"></th>
-                    <th className="py-1.5 px-1 font-bold w-[25%] border-l border-white/30 text-center">بره</th>
-                    <th className="py-1.5 px-1 font-bold w-[25%] text-center">دودندان</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-300">

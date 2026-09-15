@@ -1,143 +1,41 @@
 const fs = require('fs');
-const content = fs.readFileSync('src/pages/public/PriceList.tsx', 'utf8');
+let content = fs.readFileSync('src/pages/public/PriceList.tsx', 'utf8');
 
-let newContent = content;
+// 1. Fix getFitTextClass
+content = content.replace(
+  /const getFitTextClass = \(name: string\) => \{[\s\S]*?\};\n/,
+  `const getFitTextClass = (name: string) => {
+    if (name.length > 25) return 'text-[11.5px] leading-tight whitespace-normal break-words';
+    if (name.length > 18) return 'text-[12px] leading-snug whitespace-normal break-words';
+    return 'text-[13px] whitespace-normal';
+  };\n`
+);
 
-// Replace header section
-const headerRegex = /<header className="flex-none mb-4 flex justify-between items-end pb-4 border-b-2 border-\[#124A57\] dark:border-white\/20">([\s\S]*?)<\/header>/;
+// 2. Modify Column widths globally in the table
+// name column: w-[50%] -> w-[60%]
+content = content.replace(/w-\[50%\]/g, 'w-[65%]');
+// price single column: w-[25%] -> w-[17.5%]
+content = content.replace(/w-\[25%\]/g, 'w-[17.5%]');
 
-const newHeader = `<header className="flex-none mb-4 flex items-center justify-between pb-4 border-b-2 border-[#124A57] dark:border-white/20">
-            {/* Right Column: Titles */}
-            <div className="flex-1 text-right flex flex-col justify-center">
-              <h1 className="text-2xl font-black text-[#124A57] dark:text-white leading-tight">
-                {settings.title}
-                <span className="text-3xl text-[#CD78B3] dark:text-[#d85c96] block mt-1">{settings.companyName}</span>
-              </h1>
-              {settings.subtitle && (
-                <p className="text-sm font-bold text-gray-600 dark:text-gray-300 mt-2">
-                  {settings.subtitle}
-                </p>
-              )}
-            </div>
+// 3. Remove text-[#CD78B3] from Col 2 (Gousale and Morgh)
+const col2Start = content.indexOf('// Col 2');
+const block2 = content.substring(col2Start, col2Start + 2500);
+// replace pink color specifically in this block
+const block2Fixed = block2.replace(/text-\[\#CD78B3\]/g, 'text-black dark:text-white');
+content = content.substring(0, col2Start) + block2Fixed + content.substring(col2Start + 2500);
 
-            {/* Middle Column: Date */}
-            <div className="flex-[0.5] flex justify-center items-center">
-              <div className="text-center flex flex-col items-center justify-center gap-1 bg-gray-50 dark:bg-white/10 px-4 py-2 rounded-xl border border-gray-100 dark:border-transparent">
-                <span className="text-xs font-bold text-gray-500 dark:text-gray-300">تاریخ:</span>
-                <span className="text-base font-black text-[#124A57] dark:text-white tracking-wide" dir="ltr">
-                  {formatPersianDate(settings.lastUpdated || new Date().toISOString()).split(' ')[0]}
-                </span>
-              </div>
-            </div>
+// Add width class to colSpan={2} priceCells if missing
+content = content.replace(/<td colSpan=\{2\} className="(.*?)"/g, (match, p1) => {
+  if (p1.includes('w-[35%]')) return match;
+  if (p1.includes('w-[65%]')) {
+    return `<td colSpan={2} className="${p1.replace('w-[65%]', 'w-[35%]')} "`;
+  }
+  return `<td colSpan={2} className="${p1} w-[35%]"`;
+});
 
-            {/* Left Column: Logo */}
-            <div className="flex-1 flex justify-end items-center h-28">
-              {settings.logoLightUrl && (
-                <img src={settings.logoLightUrl} alt="Logo" className="h-full w-auto object-contain block dark:hidden" />
-              )}
-              {settings.logoDarkUrl && (
-                <img src={settings.logoDarkUrl} alt="Logo" className="h-full w-auto object-contain hidden dark:block" />
-              )}
-            </div>
-          </header>`;
+// Also fix the other price cells widths if missing
+content = content.replace(/<td className="(.*?) w-\[17\.5%\]">/g, (match) => match); // keep existing ones
+content = content.replace(/<td className="py-1 px-1 font-bold border-l border-gray-300 text-center( text-\[15px\] text-black dark:text-white)?">/g, '<td className="py-1 px-1 font-bold border-l border-gray-300 text-center$1 w-[17.5%]">');
+content = content.replace(/<td className="py-1 px-1 font-bold text-center( text-\[15px\] text-black dark:text-white)?">/g, '<td className="py-1 px-1 font-bold text-center$1 w-[17.5%]">');
 
-newContent = newContent.replace(headerRegex, newHeader);
-
-// Replace renderCategoryRecursive
-const col1Regex = /if \(colIndex === 1\) {[\s\S]*?\} else \{[\s\S]*?\/\/ Col 2[\s\S]*?let priceCells;[\s\S]*?if \(category\.hasLamb && category\.hasTwoTeeth\) {[\s\S]*?\} else if \(category\.hasLamb \|\| category\.hasTwoTeeth\) {[\s\S]*?\} else {[\s\S]*?\}[\s\S]*?return \([\s\S]*?\);[\s\S]*?\}/;
-
-const newColLogic = `if (colIndex === 1) {
-            let priceCells;
-            if (!product.hasLamb && !product.hasTwoTeeth) {
-              priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-lg text-[#CD78B3]">
-                  {product.priceLamb ? formatNumber(product.priceLamb) : (product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-')}
-                </td>
-              );
-            } else if (category.hasLamb && category.hasTwoTeeth) {
-              priceCells = (
-                <>
-                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center">
-                    {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
-                  </td>
-                  <td className="py-1 px-1 font-bold text-center">
-                    {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
-                  </td>
-                </>
-              );
-            } else if (category.hasLamb) {
-              priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-lg text-[#CD78B3]">
-                  {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
-                </td>
-              );
-            } else if (category.hasTwoTeeth) {
-              priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-lg text-[#CD78B3]">
-                  {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
-                </td>
-              );
-            } else {
-              priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-gray-400">
-                  -
-                </td>
-              );
-            }
-
-            return (
-              <tr key={product.id} className="text-black">
-                <td className="py-1 px-3 font-bold text-right border-l border-gray-300 w-[50%]">
-                  {'\u00A0\u00A0'.repeat(depth)}{product.name}
-                </td>
-                {priceCells}
-              </tr>
-            );
-          } else {
-            // Col 2
-            let priceCells;
-            if (!product.hasLamb && !product.hasTwoTeeth) {
-              priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3]">
-                  {product.priceLamb ? formatNumber(product.priceLamb) : (product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-')}
-                </td>
-              );
-            } else if (category.hasLamb && category.hasTwoTeeth) {
-              priceCells = (
-                <>
-                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center text-[15px] text-[#CD78B3]">
-                    {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
-                  </td>
-                  <td className="py-1 px-1 font-bold text-center text-[15px] text-[#CD78B3]">
-                    {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
-                  </td>
-                </>
-              );
-            } else if (category.hasLamb || category.hasTwoTeeth) {
-              priceCells = (
-                <td colSpan={2} className="py-1 px-2 font-bold text-center text-lg text-[#CD78B3]">
-                  {formatNumber(product.priceLamb || product.priceTwoTeeth)}
-                </td>
-              );
-            } else {
-              priceCells = (
-                <td colSpan={2} className="py-1 px-2 font-bold text-center text-gray-400">
-                  -
-                </td>
-              );
-            }
-
-            return (
-              <tr key={product.id} className="text-black">
-                <td className="py-1 px-3 font-bold text-right border-l border-gray-300 w-[50%]">
-                  {'\u00A0\u00A0'.repeat(depth)}{product.name}
-                </td>
-                {priceCells}
-              </tr>
-            );
-          }`;
-
-newContent = newContent.replace(col1Regex, newColLogic);
-
-fs.writeFileSync('src/pages/public/PriceList.tsx', newContent);
-console.log('done');
+fs.writeFileSync('src/pages/public/PriceList.tsx', content);
