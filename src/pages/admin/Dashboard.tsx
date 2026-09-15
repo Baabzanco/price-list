@@ -78,7 +78,7 @@ export function Dashboard() {
         />
       </div>
 
-      <div className="bg-white rounded-2xl border border-surface-200 shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-surface-900 rounded-2xl border border-surface-200 dark:border-surface-800 shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-surface-200 dark:border-surface-800 flex justify-between items-center">
           <h3 className="font-bold text-lg text-surface-900 dark:text-white">آخرین تغییرات قیمت</h3>
           <Link to="/admin/history" className="text-sm text-primary dark:text-primary-hover hover:underline font-medium">
