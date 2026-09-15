@@ -38,8 +38,6 @@ export function PriceList() {
         quality: 1.0,
         pixelRatio: 2,
         backgroundColor: document.documentElement.classList.contains('dark') ? '#124A57' : '#ffffff',
-        width: printRef.current.scrollWidth,
-        height: printRef.current.scrollHeight,
         style: {
           transform: 'none',
         }
@@ -242,11 +240,11 @@ export function PriceList() {
       </div>
 
       {/* A4 Print Container */}
-      <div className={`flex-1 py-8 px-4 flex no-print-padding ${isExportMode ? 'justify-start' : 'justify-center overflow-x-auto'}`} dir="rtl">
+      <div className={`flex-1 py-8 px-4 flex no-print-padding ${isExportMode ? 'justify-center' : 'justify-center overflow-x-auto'}`} dir="rtl">
         <div 
           ref={printRef}
           className={`print-container bg-white dark:bg-[#124A57] shadow-xl text-black dark:text-white flex flex-col ${
-            isExportMode ? 'w-[794px] min-w-[794px] min-h-[1123px] m-0 absolute top-0 right-0 z-50' : 'max-w-[210mm] w-full min-h-[280mm] mx-auto relative'
+            isExportMode ? 'w-[794px] min-w-[794px] min-h-[1123px]' : 'max-w-[210mm] w-full min-h-[280mm] mx-auto'
           }`}
           style={{ padding: '10mm 15mm' }}
         >
