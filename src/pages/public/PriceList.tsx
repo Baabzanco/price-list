@@ -194,7 +194,15 @@ export function PriceList() {
                     textAlignLast: 'right'
                   }}
                 >
-                  <span className="block text-right w-full" dir="rtl" style={{ textAlign: 'right', textAlignLast: 'right' }}>
+                  <span 
+                    className="block text-right w-full" 
+                    dir="rtl" 
+                    style={{ 
+                      fontSize: product.fontSize ? `${product.fontSize}px` : undefined,
+                      textAlign: 'right', 
+                      textAlignLast: 'right' 
+                    }}
+                  >
                     {product.name.trim()}
                   </span>
                 </td>
@@ -247,7 +255,15 @@ export function PriceList() {
                     textAlignLast: 'right'
                   }}
                 >
-                  <span className="block text-right w-full" dir="rtl" style={{ textAlign: 'right', textAlignLast: 'right' }}>
+                  <span 
+                    className="block text-right w-full" 
+                    dir="rtl" 
+                    style={{ 
+                      fontSize: product.fontSize ? `${product.fontSize}px` : undefined,
+                      textAlign: 'right', 
+                      textAlignLast: 'right' 
+                    }}
+                  >
                     {product.name.trim()}
                   </span>
                 </td>

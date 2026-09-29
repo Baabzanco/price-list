@@ -97,9 +97,4 @@
     border-collapse: collapse;
     width: 100%;
   }
-  
-  th, td {
-    padding: 2px 4px !important;
-    font-size: 10px !important;
-  }
 }
