@@ -21,6 +21,7 @@ export interface Product {
   updatedAt: string;
   hasLamb: boolean;
   hasTwoTeeth: boolean;
+  fontSize?: number | null;
 }
 
 export interface PriceHistory {
@@ -101,18 +102,18 @@ class APIClient {
   async getProductsByCategory(categoryId: string): Promise<Product[]> {
     return this.request<Product[]>(`/products/category/${categoryId}`);
   }
-  async addProduct(categoryId: string, name: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true): Promise<Product> {
+  async addProduct(categoryId: string, name: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true, fontSize?: number | null): Promise<Product> {
     const res = await this.request<Product>('/products', {
       method: 'POST',
-      body: JSON.stringify({ categoryId, name, hasLamb, hasTwoTeeth })
+      body: JSON.stringify({ categoryId, name, hasLamb, hasTwoTeeth, fontSize: fontSize ?? null })
     });
     this.notify();
     return res;
   }
-  async updateProduct(id: string, name: string, categoryId: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true): Promise<void> {
+  async updateProduct(id: string, name: string, categoryId: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true, fontSize?: number | null): Promise<void> {
     await this.request<void>(`/products/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, categoryId, hasLamb, hasTwoTeeth })
+      body: JSON.stringify({ name, categoryId, hasLamb, hasTwoTeeth, fontSize: fontSize ?? null })
     });
     this.notify();
   }
@@ -160,6 +161,20 @@ class APIClient {
   // Stats
   async getStats(): Promise<{ activeProducts: number, categoriesCount: number, changesToday: number, lastUpdated: string | null }> {
     return this.request('/stats');
+  }
+
+  // Backup & Restore
+  async getBackup(): Promise<any> {
+    return this.request<any>('/backup');
+  }
+
+  async restoreBackup(backupData: any): Promise<{ success: boolean; categoriesCount: number; productsCount: number }> {
+    const res = await this.request<{ success: boolean; categoriesCount: number; productsCount: number }>('/backup/restore', {
+      method: 'POST',
+      body: JSON.stringify(backupData)
+    });
+    this.notify();
+    return res;
   }
 
   // Migration

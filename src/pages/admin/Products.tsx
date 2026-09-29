@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useDB } from '../../lib/useDB';
 import { db, Category } from '../../lib/db';
-import { CheckCircle2, Eye, EyeOff, Plus, Trash2, Search, Edit2, Save, X, GripVertical } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, Plus, Trash2, Search, Edit2, Save, X, GripVertical, Type, Minus, RotateCcw } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -12,7 +12,7 @@ function SortableRow({ product, category, isEditing, editForm, setEditForm, save
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: product.id });
   const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 1 : 0, position: isDragging ? 'relative' as const : undefined };
   return (
-    <tr ref={setNodeRef} style={style} className={`hover:bg-surface-50/50 dark:hover:bg-surface-800/50 transition-colors ${isDragging ? 'bg-surface-100 dark:bg-surface-800 shadow-lg' : ''}`}>
+    <tr ref={setNodeRef} style={style} className={`hover:bg-surface-50/50 dark:hover:bg-surface-800/50 transition-colors ${isDragging ? 'bg-surface-100 dark:bg-surface-800 shadow-lg' : ''} ${isEditing ? 'bg-primary/5 dark:bg-primary/10' : ''}`}>
       <td className="pl-2 pr-6 py-4 w-10">
         {!isEditing && !isSearchActive && (
           <div {...attributes} {...listeners} className="cursor-grab text-surface-400 hover:text-surface-600 dark:hover:text-surface-300">
@@ -22,9 +22,149 @@ function SortableRow({ product, category, isEditing, editForm, setEditForm, save
       </td>
       <td className="px-6 py-4">
         {isEditing ? (
-          <input type="text" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className="w-full px-3 py-1.5 rounded-lg border border-surface-200 bg-white dark:bg-surface-800 dark:border-surface-700 focus:outline-none focus:ring-2 focus:ring-primary/20" />
+          <div className="space-y-2.5 min-w-[280px]">
+            <input 
+              type="text" 
+              value={editForm.name} 
+              onChange={e => setEditForm({ ...editForm, name: e.target.value })} 
+              className="w-full px-3 py-2 rounded-lg border border-surface-200 bg-white dark:bg-surface-800 dark:border-surface-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20 font-medium" 
+              placeholder="نام قلم..."
+            />
+            
+            {/* Font size control toolbar */}
+            <div className="flex flex-col gap-2 p-2.5 rounded-xl bg-surface-50 dark:bg-surface-800/90 border border-surface-200 dark:border-surface-700">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="flex items-center gap-1.5 text-xs text-surface-700 dark:text-surface-300 font-medium">
+                  <Type className="w-3.5 h-3.5 text-primary" />
+                  سایز فونت نام آیتم:
+                </span>
+                
+                {/* Stepper +/- */}
+                <div className="flex items-center bg-white dark:bg-surface-900 rounded-lg border border-surface-200 dark:border-surface-700 shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = editForm.fontSize ?? 13;
+                      const next = Math.max(9, current - 1);
+                      setEditForm({ ...editForm, fontSize: next });
+                    }}
+                    className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-700 dark:text-surface-300 rounded-r-lg transition-colors cursor-pointer"
+                    title="کوچک‌تر کردن فونت (-)"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="px-2 font-mono font-bold text-xs text-surface-900 dark:text-white min-w-[48px] text-center">
+                    {editForm.fontSize ? `${editForm.fontSize}px` : 'خودکار'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const current = editForm.fontSize ?? 13;
+                      const next = Math.min(26, current + 1);
+                      setEditForm({ ...editForm, fontSize: next });
+                    }}
+                    className="p-1.5 hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-700 dark:text-surface-300 rounded-l-lg transition-colors cursor-pointer"
+                    title="بزرگ‌تر کردن فونت (+)"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Presets & Reset */}
+              <div className="flex items-center gap-1.5 flex-wrap pt-1.5 border-t border-surface-200/60 dark:border-surface-700/60">
+                <span className="text-[11px] text-surface-500">اندازه‌ها:</span>
+                <button
+                  type="button"
+                  onClick={() => setEditForm({ ...editForm, fontSize: 11 })}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[11px] transition-all cursor-pointer",
+                    editForm.fontSize === 11 
+                      ? "bg-primary text-white font-bold shadow-xs" 
+                      : "bg-white dark:bg-surface-700 text-surface-700 dark:text-surface-200 border border-surface-200 dark:border-surface-600 hover:bg-surface-100"
+                  )}
+                >
+                  کوچک (11px)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditForm({ ...editForm, fontSize: 13 })}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[11px] transition-all cursor-pointer",
+                    editForm.fontSize === 13 
+                      ? "bg-primary text-white font-bold shadow-xs" 
+                      : "bg-white dark:bg-surface-700 text-surface-700 dark:text-surface-200 border border-surface-200 dark:border-surface-600 hover:bg-surface-100"
+                  )}
+                >
+                  استاندارد (13px)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditForm({ ...editForm, fontSize: 15 })}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[11px] transition-all cursor-pointer",
+                    editForm.fontSize === 15 
+                      ? "bg-primary text-white font-bold shadow-xs" 
+                      : "bg-white dark:bg-surface-700 text-surface-700 dark:text-surface-200 border border-surface-200 dark:border-surface-600 hover:bg-surface-100"
+                  )}
+                >
+                  بزرگ (15px)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditForm({ ...editForm, fontSize: 18 })}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[11px] transition-all cursor-pointer",
+                    editForm.fontSize === 18 
+                      ? "bg-primary text-white font-bold shadow-xs" 
+                      : "bg-white dark:bg-surface-700 text-surface-700 dark:text-surface-200 border border-surface-200 dark:border-surface-600 hover:bg-surface-100"
+                  )}
+                >
+                  خیلی بزرگ (18px)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditForm({ ...editForm, fontSize: null })}
+                  className={cn(
+                    "flex items-center gap-1 px-2 py-0.5 rounded text-[11px] transition-all mr-auto cursor-pointer",
+                    editForm.fontSize === null 
+                      ? "bg-surface-700 text-white font-bold" 
+                      : "bg-white dark:bg-surface-700 text-surface-500 dark:text-surface-400 border border-surface-200 dark:border-surface-600 hover:bg-surface-100"
+                  )}
+                  title="بازگشت به اندازه خودکار بر اساس طول نام"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  خودکار
+                </button>
+              </div>
+
+              {/* Live Preview Bar */}
+              <div className="mt-1 px-2.5 py-1.5 rounded-lg bg-white dark:bg-surface-900 border border-surface-200 dark:border-surface-700 flex items-center gap-2 overflow-hidden">
+                <span className="text-[10px] text-surface-400 shrink-0">پیش‌نمایش:</span>
+                <span 
+                  className="font-bold text-surface-900 dark:text-white truncate"
+                  style={{ fontSize: `${editForm.fontSize || 13}px` }}
+                >
+                  {editForm.name || 'نام قلم'}
+                </span>
+              </div>
+            </div>
+          </div>
         ) : (
-          <span className="font-medium text-surface-900 dark:text-white">{product.name}</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span 
+              className="font-medium text-surface-900 dark:text-white transition-all"
+              style={product.fontSize ? { fontSize: `${product.fontSize}px` } : undefined}
+            >
+              {product.name}
+            </span>
+            {product.fontSize ? (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-mono font-semibold bg-primary/10 text-primary dark:bg-primary/20 dark:text-primary-hover border border-primary/20" title="سایز فونت اختصاصی">
+                <Type className="w-3 h-3" />
+                {product.fontSize}px
+              </span>
+            ) : null}
+          </div>
         )}
       </td>
       <td className="px-6 py-4">
@@ -85,10 +225,17 @@ export function Products() {
   const [selectedCategory, setSelectedCategory] = useState('');
   const [newHasLamb, setNewHasLamb] = useState(true);
   const [newHasTwoTeeth, setNewHasTwoTeeth] = useState(true);
+  const [newFontSize, setNewFontSize] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<{ name: string, categoryId: string, hasLamb: boolean, hasTwoTeeth: boolean }>({ name: '', categoryId: '', hasLamb: true, hasTwoTeeth: true });
+  const [editForm, setEditForm] = useState<{ 
+    name: string, 
+    categoryId: string, 
+    hasLamb: boolean, 
+    hasTwoTeeth: boolean,
+    fontSize: number | null 
+  }>({ name: '', categoryId: '', hasLamb: true, hasTwoTeeth: true, fontSize: null });
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -99,10 +246,11 @@ export function Products() {
     e.preventDefault();
     if (!newProductName.trim() || !selectedCategory) return;
     try {
-      await db.addProduct(selectedCategory, newProductName.trim(), newHasLamb, newHasTwoTeeth);
+      await db.addProduct(selectedCategory, newProductName.trim(), newHasLamb, newHasTwoTeeth, newFontSize);
       setNewProductName('');
       setNewHasLamb(true);
       setNewHasTwoTeeth(true);
+      setNewFontSize(null);
       showToast('محصول جدید با موفقیت اضافه شد.');
     } catch (error) {
       showToast('خطا در افزودن محصول.', 'error');
@@ -131,13 +279,19 @@ export function Products() {
 
   const startEdit = (p: any) => {
     setEditingId(p.id);
-    setEditForm({ name: p.name, categoryId: p.categoryId, hasLamb: p.hasLamb ?? true, hasTwoTeeth: p.hasTwoTeeth ?? true });
+    setEditForm({ 
+      name: p.name, 
+      categoryId: p.categoryId, 
+      hasLamb: p.hasLamb ?? true, 
+      hasTwoTeeth: p.hasTwoTeeth ?? true,
+      fontSize: p.fontSize ?? null 
+    });
   };
 
   const saveEdit = async (id: string) => {
     if (!editForm.name.trim() || !editForm.categoryId) return;
     try {
-      await db.updateProduct(id, editForm.name.trim(), editForm.categoryId, editForm.hasLamb, editForm.hasTwoTeeth);
+      await db.updateProduct(id, editForm.name.trim(), editForm.categoryId, editForm.hasLamb, editForm.hasTwoTeeth, editForm.fontSize);
       showToast('محصول با موفقیت ویرایش شد.');
       setEditingId(null);
     } catch (error) {
@@ -162,7 +316,7 @@ export function Products() {
     if (over && active.id !== over.id) {
       const oldIndex = products.findIndex(p => p.id === active.id);
       const newIndex = products.findIndex(p => p.id === over.id);
-      const newProducts = arrayMove(products, oldIndex, newIndex);
+      const newProducts = arrayMove<any>(products, oldIndex, newIndex);
       const updates = newProducts.map((p, idx) => ({ id: p.id, sortOrder: idx + 1 }));
       try {
         await db.reorderProducts(updates);
@@ -234,6 +388,27 @@ export function Products() {
             {orderedCategories.map(c => (
               <option key={c.id} value={c.id}>{'\u00A0\u00A0'.repeat(c.depth)}{c.name}</option>
             ))}
+          </select>
+        </div>
+        <div className="w-full lg:w-40 space-y-1.5">
+          <label className="text-sm font-medium text-surface-700 dark:text-surface-300 flex items-center gap-1">
+            <Type className="w-3.5 h-3.5 text-primary" />
+            سایز فونت
+          </label>
+          <select
+            value={newFontSize === null ? '' : newFontSize}
+            onChange={e => setNewFontSize(e.target.value === '' ? null : Number(e.target.value))}
+            className="w-full px-3 py-2.5 rounded-xl border border-surface-200 bg-surface-50 dark:bg-surface-800 dark:border-surface-700 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+          >
+            <option value="">خودکار</option>
+            <option value="11">کوچک (11px)</option>
+            <option value="12">12px</option>
+            <option value="13">استاندارد (13px)</option>
+            <option value="14">14px</option>
+            <option value="15">بزرگ (15px)</option>
+            <option value="16">16px</option>
+            <option value="18">خیلی بزرگ (18px)</option>
+            <option value="20">20px</option>
           </select>
         </div>
         <div className="flex gap-4 items-center h-[46px] px-2 w-full lg:w-auto">

@@ -281,7 +281,19 @@ export function PriceEditor() {
 
                       return (
                         <tr key={product.id} className="hover:bg-surface-50/30 dark:hover:bg-surface-800/30">
-                          <td className="px-6 py-3 font-medium text-surface-900 dark:text-white">{product.name}</td>
+                          <td 
+                            className="px-6 py-3 font-medium text-surface-900 dark:text-white"
+                            style={product.fontSize ? { fontSize: `${product.fontSize}px` } : undefined}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>{product.name}</span>
+                              {product.fontSize ? (
+                                <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-surface-100 dark:bg-surface-800 text-surface-500 font-normal">
+                                  {product.fontSize}px
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
                           
                           {!product.hasLamb && !product.hasTwoTeeth ? (
                             <td colSpan={category.hasLamb && category.hasTwoTeeth ? 2 : 1} className="px-6 py-3">
@@ -366,8 +378,7 @@ export function PriceEditor() {
 
       {/* Floating Action Bar for Mobile/Long pages */}
       {hasChanges && (
-        <div className="fixed bottom-0 left-0 right-0 lg:left-64 bg-white dark:bg-surface-950 border-t border-surface-200 dark:border-surface-800 p-4 flex justify-between items-center shadow-lg z-30 animate-in slide-in-from-bottom-4">
-          <span className="font-medium text-amber-600 hidden sm:block">تغییرات ذخیره نشده دارید. برای اعمال آن‌ها دکمه ذخیره را بزنید.</span>
+        <div className="fixed bottom-0 left-0 lg:right-64 right-0 bg-white dark:bg-surface-950 border-t border-surface-200 dark:border-surface-800 p-4 flex justify-end items-center shadow-lg z-30 animate-in slide-in-from-bottom-4">
           <button
             onClick={handleSave}
             className="w-full sm:w-auto flex items-center justify-center gap-2 bg-primary text-white px-6 py-3 rounded-xl hover:bg-primary-hover transition-colors font-medium shadow-sm shadow-primary/20"

@@ -22,6 +22,9 @@ export interface Product {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  hasLamb?: boolean;
+  hasTwoTeeth?: boolean;
+  fontSize?: number | null;
 }
 
 export interface PriceHistory {
@@ -175,6 +178,7 @@ export function initDb() {
       updatedAt TEXT NOT NULL,
       hasLamb INTEGER NOT NULL DEFAULT 1,
       hasTwoTeeth INTEGER NOT NULL DEFAULT 1,
+      fontSize INTEGER,
       FOREIGN KEY(categoryId) REFERENCES categories(id) ON DELETE CASCADE
     );
 
@@ -199,6 +203,7 @@ export function initDb() {
   try { db.prepare("ALTER TABLE categories ADD COLUMN hasTwoTeeth INTEGER NOT NULL DEFAULT 1").run(); } catch(e){}
   try { db.prepare("ALTER TABLE products ADD COLUMN hasLamb INTEGER NOT NULL DEFAULT 1").run(); } catch(e){}
   try { db.prepare("ALTER TABLE products ADD COLUMN hasTwoTeeth INTEGER NOT NULL DEFAULT 1").run(); } catch(e){}
+  try { db.prepare("ALTER TABLE products ADD COLUMN fontSize INTEGER").run(); } catch(e){}
 
   // Seed data if empty
   const categoryCount = db.prepare('SELECT count(*) as count FROM categories').get() as { count: number };
@@ -258,23 +263,23 @@ export function toggleCategoryActive(id: string) {
 
 export function getProducts(): Product[] {
   const rows = db.prepare('SELECT * FROM products ORDER BY sortOrder ASC').all();
-  return rows.map((r: any) => ({ ...r, isActive: !!r.isActive }));
+  return rows.map((r: any) => ({ ...r, isActive: !!r.isActive, hasLamb: !!r.hasLamb, hasTwoTeeth: !!r.hasTwoTeeth, fontSize: r.fontSize ?? null }));
 }
 
 export function getProductsByCategory(categoryId: string): Product[] {
   const rows = db.prepare('SELECT * FROM products WHERE categoryId = ? ORDER BY sortOrder ASC').all(categoryId);
-  return rows.map((r: any) => ({ ...r, isActive: !!r.isActive }));
+  return rows.map((r: any) => ({ ...r, isActive: !!r.isActive, hasLamb: !!r.hasLamb, hasTwoTeeth: !!r.hasTwoTeeth, fontSize: r.fontSize ?? null }));
 }
 
-export function addProduct(categoryId: string, name: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true): Product {
+export function addProduct(categoryId: string, name: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true, fontSize: number | null = null): Product {
   const sortOrder = db.prepare('SELECT COALESCE(MAX(sortOrder), 0) + 1 as nextSort FROM products WHERE categoryId = ?').get(categoryId) as { nextSort: number };
   const id = `p_${uuidv4()}`;
   const now = new Date().toISOString();
-  db.prepare('INSERT INTO products (id, categoryId, name, isActive, sortOrder, createdAt, updatedAt, hasLamb, hasTwoTeeth) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)')
-    .run(id, categoryId, name, sortOrder.nextSort, now, now, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0);
+  db.prepare('INSERT INTO products (id, categoryId, name, isActive, sortOrder, createdAt, updatedAt, hasLamb, hasTwoTeeth, fontSize) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)')
+    .run(id, categoryId, name, sortOrder.nextSort, now, now, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0, fontSize ? Number(fontSize) : null);
   
   return {
-    id, categoryId, name, priceLamb: null, priceTwoTeeth: null, isActive: true, sortOrder: sortOrder.nextSort, createdAt: now, updatedAt: now, hasLamb, hasTwoTeeth
+    id, categoryId, name, priceLamb: null, priceTwoTeeth: null, isActive: true, sortOrder: sortOrder.nextSort, createdAt: now, updatedAt: now, hasLamb, hasTwoTeeth, fontSize: fontSize ? Number(fontSize) : null
   };
 }
 
@@ -296,9 +301,10 @@ export function toggleProductActive(id: string) {
   db.prepare('UPDATE products SET isActive = NOT isActive WHERE id = ?').run(id);
 }
 
-export function updateProduct(id: string, name: string, categoryId: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true) {
+export function updateProduct(id: string, name: string, categoryId: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true, fontSize: number | null = null) {
   const now = new Date().toISOString();
-  db.prepare('UPDATE products SET name = ?, categoryId = ?, updatedAt = ?, hasLamb = ?, hasTwoTeeth = ? WHERE id = ?').run(name, categoryId, now, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0, id);
+  db.prepare('UPDATE products SET name = ?, categoryId = ?, updatedAt = ?, hasLamb = ?, hasTwoTeeth = ?, fontSize = ? WHERE id = ?')
+    .run(name, categoryId, now, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0, fontSize ? Number(fontSize) : null, id);
 }
 
 export function updateProductPrices(updates: { id: string; priceLamb: number | null; priceTwoTeeth: number | null }[], userId: string) {
@@ -370,31 +376,104 @@ export function getStats() {
   };
 }
 
-export function runMigration(data: any) {
+export function getBackupData() {
+  const categories = getCategories();
+  const products = getProducts();
+  const priceHistory = getPriceHistory();
+  const settings = getSettings();
+  return {
+    version: '1.0',
+    exportedAt: new Date().toISOString(),
+    categories,
+    products,
+    priceHistory,
+    settings
+  };
+}
+
+export function restoreBackupData(data: any) {
+  if (!data || typeof data !== 'object') {
+    throw new Error('فایل پشتیبان نامعتبر است.');
+  }
+  if (!Array.isArray(data.categories)) {
+    throw new Error('بخش دسته‌بندی‌ها (categories) در فایل پشتیبان وجود ندارد.');
+  }
+  if (!Array.isArray(data.products)) {
+    throw new Error('بخش محصولات (products) در فایل پشتیبان وجود ندارد.');
+  }
+
   const transaction = db.transaction(() => {
-    // Clear existing
+    // Clear existing tables
     db.prepare('DELETE FROM price_history').run();
     db.prepare('DELETE FROM products').run();
     db.prepare('DELETE FROM categories').run();
     db.prepare('DELETE FROM settings').run();
     
+    // Insert categories
     const insertCategory = db.prepare('INSERT INTO categories (id, name, isActive, sortOrder, parentId, hasLamb, hasTwoTeeth) VALUES (?, ?, ?, ?, ?, ?, ?)');
     for (const cat of data.categories) {
-      insertCategory.run(cat.id, cat.name, cat.isActive ? 1 : 0, cat.sortOrder, cat.parentId || null, cat.hasLamb ? 1 : 0, cat.hasTwoTeeth ? 1 : 0);
+      insertCategory.run(
+        cat.id, 
+        cat.name, 
+        cat.isActive ? 1 : 0, 
+        cat.sortOrder ?? 1, 
+        cat.parentId || null, 
+        cat.hasLamb ? 1 : 0, 
+        cat.hasTwoTeeth ? 1 : 0
+      );
     }
     
-    const insertProduct = db.prepare('INSERT INTO products (id, categoryId, name, priceLamb, priceTwoTeeth, isActive, sortOrder, createdAt, updatedAt, hasLamb, hasTwoTeeth) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    // Insert products
+    const insertProduct = db.prepare('INSERT INTO products (id, categoryId, name, priceLamb, priceTwoTeeth, isActive, sortOrder, createdAt, updatedAt, hasLamb, hasTwoTeeth, fontSize) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     for (const prod of data.products) {
-      insertProduct.run(prod.id, prod.categoryId, prod.name, prod.priceLamb, prod.priceTwoTeeth, prod.isActive ? 1 : 0, prod.sortOrder, prod.createdAt, prod.updatedAt);
+      insertProduct.run(
+        prod.id, 
+        prod.categoryId, 
+        prod.name, 
+        prod.priceLamb ?? null, 
+        prod.priceTwoTeeth ?? null, 
+        prod.isActive ? 1 : 0, 
+        prod.sortOrder ?? 1, 
+        prod.createdAt || new Date().toISOString(), 
+        prod.updatedAt || new Date().toISOString(),
+        prod.hasLamb ? 1 : 0,
+        prod.hasTwoTeeth ? 1 : 0,
+        prod.fontSize ? Number(prod.fontSize) : null
+      );
     }
     
-    const insertHistory = db.prepare('INSERT INTO price_history (id, productId, priceType, oldPrice, newPrice, changedAt, changedBy) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    for (const h of (data.priceHistory || [])) {
-      insertHistory.run(h.id, h.productId, h.priceType, h.oldPrice, h.newPrice, h.changedAt, h.changedBy);
+    // Insert price history
+    const histories = data.priceHistory || data.price_history || [];
+    if (Array.isArray(histories) && histories.length > 0) {
+      const insertHistory = db.prepare('INSERT INTO price_history (id, productId, priceType, oldPrice, newPrice, changedAt, changedBy) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      for (const h of histories) {
+        insertHistory.run(
+          h.id || uuidv4(), 
+          h.productId, 
+          h.priceType || 'lamb', 
+          h.oldPrice ?? null, 
+          h.newPrice ?? null, 
+          h.changedAt || new Date().toISOString(), 
+          h.changedBy || 'system'
+        );
+      }
     }
     
-    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('app_settings', JSON.stringify(data.settings));
+    // Insert settings
+    const currentSettings = data.settings || DEFAULT_SETTINGS;
+    db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run('app_settings', JSON.stringify(currentSettings));
   });
   
   transaction();
+
+  return {
+    success: true,
+    categoriesCount: data.categories.length,
+    productsCount: data.products.length,
+    historyCount: (data.priceHistory || data.price_history || []).length
+  };
+}
+
+export function runMigration(data: any) {
+  return restoreBackupData(data);
 }

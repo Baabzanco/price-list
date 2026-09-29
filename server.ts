@@ -9,7 +9,7 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(cors());
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
 
   // Initialize DB
   db.initDb();
@@ -36,7 +36,7 @@ async function startServer() {
   // Products
   api.get('/products', (req, res) => res.json(db.getProducts()));
   api.get('/products/category/:categoryId', (req, res) => res.json(db.getProductsByCategory(req.params.categoryId)));
-  api.post('/products', (req, res) => res.json(db.addProduct(req.body.categoryId, req.body.name, req.body.hasLamb, req.body.hasTwoTeeth)));
+  api.post('/products', (req, res) => res.json(db.addProduct(req.body.categoryId, req.body.name, req.body.hasLamb, req.body.hasTwoTeeth, req.body.fontSize)));
   api.put('/products/prices', (req, res) => {
     db.updateProductPrices(req.body.updates, req.body.userId);
     res.json({ success: true });
@@ -48,7 +48,7 @@ async function startServer() {
   });
 
   api.put('/products/:id', (req, res) => {
-    db.updateProduct(req.params.id, req.body.name, req.body.categoryId, req.body.hasLamb, req.body.hasTwoTeeth);
+    db.updateProduct(req.params.id, req.body.name, req.body.categoryId, req.body.hasLamb, req.body.hasTwoTeeth, req.body.fontSize);
     res.json({ success: true });
   });
   api.delete('/products/:id', (req, res) => {
@@ -71,6 +71,25 @@ async function startServer() {
 
   // Stats
   api.get('/stats', (req, res) => res.json(db.getStats()));
+
+  // Backup & Restore
+  api.get('/backup', (req, res) => {
+    try {
+      const backup = db.getBackupData();
+      res.json(backup);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.post('/backup/restore', (req, res) => {
+    try {
+      const result = db.restoreBackupData(req.body);
+      res.json(result);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || 'خطا در بارگذاری فایل پشتیبان' });
+    }
+  });
 
   // Migration
   api.post('/migrate', (req, res) => {

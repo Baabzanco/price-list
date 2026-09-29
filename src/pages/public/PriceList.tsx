@@ -170,7 +170,10 @@ export function PriceList() {
 
             return (
               <tr key={product.id} className="text-black">
-                <td className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[65%] overflow-hidden ${getFitTextClass(product.name)}`}>
+                <td 
+                  className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[65%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
+                  style={product.fontSize ? { fontSize: `${product.fontSize}px` } : undefined}
+                >
                   {'\u00A0\u00A0'.repeat(depth)}{product.name}
                 </td>
                 {priceCells}
@@ -212,7 +215,10 @@ export function PriceList() {
 
             return (
               <tr key={product.id} className="text-black">
-                <td className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[65%] overflow-hidden ${getFitTextClass(product.name)}`}>
+                <td 
+                  className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[65%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
+                  style={product.fontSize ? { fontSize: `${product.fontSize}px` } : undefined}
+                >
                   {'\u00A0\u00A0'.repeat(depth)}{product.name}
                 </td>
                 {priceCells}

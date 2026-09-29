@@ -32,11 +32,11 @@ export function AdminLayout() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "fixed inset-y-0 right-0 z-50 w-64 bg-primary text-white transition-transform duration-300 lg:static lg:translate-x-0",
+        "fixed inset-y-0 right-0 z-50 w-64 bg-primary text-white transition-transform duration-300 lg:sticky lg:top-0 lg:h-screen lg:shrink-0 lg:translate-x-0",
         isMobileOpen ? "translate-x-0" : "translate-x-full"
       )}>
-        <div className="h-full flex flex-col">
-          <div className="h-16 flex items-center justify-between px-6 border-b border-white/10">
+        <div className="h-full flex flex-col overflow-hidden">
+          <div className="h-16 flex items-center justify-between px-6 border-b border-white/10 shrink-0">
             <span className="text-lg font-bold truncate">{settings.companyName}</span>
             <button className="lg:hidden" onClick={() => setIsMobileOpen(false)}>
               <X className="w-6 h-6 text-white" />
@@ -60,7 +60,7 @@ export function AdminLayout() {
             ))}
           </nav>
 
-          <div className="p-4 border-t border-white/10 space-y-2">
+          <div className="p-4 border-t border-white/10 space-y-2 shrink-0">
             <NavLink
               to="/price-list"
               className="flex w-full items-center gap-3 px-4 py-3 rounded-xl text-white/70 hover:bg-white/5 hover:text-white transition-colors"
@@ -74,7 +74,7 @@ export function AdminLayout() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 bg-surface-50 dark:bg-surface-900 transition-colors">
-        <header className="h-16 bg-white dark:bg-surface-950 border-b border-surface-200 dark:border-surface-800 flex items-center justify-between px-4 lg:px-8 shrink-0 transition-colors">
+        <header className="h-16 bg-white dark:bg-surface-950 border-b border-surface-200 dark:border-surface-800 flex items-center justify-between px-4 lg:px-8 shrink-0 transition-colors sticky top-0 z-30">
           <div className="flex items-center gap-4">
             <button 
               className="lg:hidden p-2 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 text-surface-800 dark:text-surface-200"
