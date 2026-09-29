@@ -87,8 +87,12 @@ export function PriceList() {
       } else if (category.hasLamb && category.hasTwoTeeth) {
         headerRow = (
           <tr className="bg-[#CD78B3] dark:bg-[#d85c96] text-white">
-            <td className={`py-1.5 px-3 font-black text-right border-l border-white/30 w-[65%] ${depth === 1 ? 'text-[14px]' : 'text-[13px]'}`}>
-              {'\u00A0\u00A0'.repeat(depth)}{category.name}
+            <td 
+              dir="rtl"
+              className={`py-1.5 px-3 font-black text-right border-l border-white/30 w-[65%] ${depth === 1 ? 'text-[14px]' : 'text-[13px]'}`}
+              style={{ paddingRight: depth > 0 ? `${12 + depth * 12}px` : '12px', textAlign: 'right', textAlignLast: 'right' }}
+            >
+              {category.name.trim()}
             </td>
             <td className="py-1.5 px-1 font-bold w-[17.5%] border-l border-white/30 text-center text-[12px]">بره</td>
             <td className="py-1.5 px-1 font-bold w-[17.5%] text-center text-[12px]">دودندان</td>
@@ -97,8 +101,13 @@ export function PriceList() {
       } else {
         headerRow = (
           <tr className="bg-[#CD78B3] dark:bg-[#d85c96] text-white">
-            <td colSpan={3} className={`py-1.5 px-3 font-black text-right ${depth === 1 ? 'text-[14px]' : 'text-[13px]'}`}>
-              {'\u00A0\u00A0'.repeat(depth)}{category.name}
+            <td 
+              colSpan={3} 
+              dir="rtl"
+              className={`py-1.5 px-3 font-black text-right ${depth === 1 ? 'text-[14px]' : 'text-[13px]'}`}
+              style={{ paddingRight: depth > 0 ? `${12 + depth * 12}px` : '12px', textAlign: 'right', textAlignLast: 'right' }}
+            >
+              {category.name.trim()}
             </td>
           </tr>
         );
@@ -116,8 +125,13 @@ export function PriceList() {
       } else {
         headerRow = (
           <tr className="bg-gray-100 dark:bg-gray-200">
-            <td colSpan={3} className="py-1.5 px-3 font-black text-right text-[#124A57] text-[13px]">
-              {'  '.repeat(depth)}{category.name}
+            <td 
+              colSpan={3} 
+              dir="rtl"
+              className="py-1.5 px-3 font-black text-right text-[#124A57] text-[13px]"
+              style={{ paddingRight: depth > 0 ? `${12 + depth * 12}px` : '12px', textAlign: 'right', textAlignLast: 'right' }}
+            >
+              {category.name.trim()}
             </td>
           </tr>
         );
@@ -133,36 +147,36 @@ export function PriceList() {
             let priceCells;
             if (!product.hasLamb && !product.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%] ">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%] font-sans tabular-nums whitespace-nowrap">
                   {product.priceLamb ? formatNumber(product.priceLamb) : (product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-')}
                 </td>
               );
             } else if (category.hasLamb && category.hasTwoTeeth) {
               priceCells = (
                 <>
-                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center w-[17.5%]">
+                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center w-[17.5%] font-sans tabular-nums text-black text-[15px] whitespace-nowrap">
                     {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                   </td>
-                  <td className="py-1 px-1 font-bold text-center w-[17.5%]">
+                  <td className="py-1 px-1 font-bold text-center w-[17.5%] font-sans tabular-nums text-black text-[15px] whitespace-nowrap">
                     {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
                   </td>
                 </>
               );
             } else if (category.hasLamb) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%] ">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%] font-sans tabular-nums whitespace-nowrap">
                   {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                 </td>
               );
             } else if (category.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%] ">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%] font-sans tabular-nums whitespace-nowrap">
                   {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
                 </td>
               );
             } else {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-gray-400 w-[35%] ">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-gray-400 w-[35%] whitespace-nowrap">
                   -
                 </td>
               );
@@ -171,10 +185,18 @@ export function PriceList() {
             return (
               <tr key={product.id} className="text-black">
                 <td 
+                  dir="rtl"
                   className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[65%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
-                  style={product.fontSize ? { fontSize: `${product.fontSize}px` } : undefined}
+                  style={{
+                    fontSize: product.fontSize ? `${product.fontSize}px` : undefined,
+                    paddingRight: depth > 0 ? `${12 + depth * 12}px` : '12px',
+                    textAlign: 'right',
+                    textAlignLast: 'right'
+                  }}
                 >
-                  {'\u00A0\u00A0'.repeat(depth)}{product.name}
+                  <span className="block text-right w-full" dir="rtl" style={{ textAlign: 'right', textAlignLast: 'right' }}>
+                    {product.name.trim()}
+                  </span>
                 </td>
                 {priceCells}
               </tr>
@@ -184,25 +206,25 @@ export function PriceList() {
             let priceCells;
             if (!product.hasLamb && !product.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[18%] whitespace-nowrap">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[18%] whitespace-nowrap font-sans tabular-nums">
                   {product.priceLamb ? formatNumber(product.priceLamb) : (product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-')}
                 </td>
               );
             } else if (category.hasLamb && category.hasTwoTeeth) {
               priceCells = (
                 <>
-                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center text-[15px] text-black w-[9%] whitespace-nowrap">
+                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center text-[15px] text-black w-[9%] whitespace-nowrap font-sans tabular-nums">
                     {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                   </td>
-                  <td className="py-1 px-1 font-bold text-center text-[15px] text-black w-[9%] whitespace-nowrap">
+                  <td className="py-1 px-1 font-bold text-center text-[15px] text-black w-[9%] whitespace-nowrap font-sans tabular-nums">
                     {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
                   </td>
                 </>
               );
             } else if (category.hasLamb || category.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[18%] whitespace-nowrap">
-                  {formatNumber(product.priceLamb || product.priceTwoTeeth)}
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[18%] whitespace-nowrap font-sans tabular-nums">
+                  {product.priceLamb || product.priceTwoTeeth ? formatNumber(product.priceLamb || product.priceTwoTeeth) : '-'}
                 </td>
               );
             } else {
@@ -216,10 +238,18 @@ export function PriceList() {
             return (
               <tr key={product.id} className="text-black">
                 <td 
+                  dir="rtl"
                   className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[82%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
-                  style={product.fontSize ? { fontSize: `${product.fontSize}px` } : undefined}
+                  style={{
+                    fontSize: product.fontSize ? `${product.fontSize}px` : undefined,
+                    paddingRight: depth > 0 ? `${12 + depth * 12}px` : '12px',
+                    textAlign: 'right',
+                    textAlignLast: 'right'
+                  }}
                 >
-                  {'\u00A0\u00A0'.repeat(depth)}{product.name}
+                  <span className="block text-right w-full" dir="rtl" style={{ textAlign: 'right', textAlignLast: 'right' }}>
+                    {product.name.trim()}
+                  </span>
                 </td>
                 {priceCells}
               </tr>

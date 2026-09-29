@@ -40,7 +40,7 @@ export function formatPersianDate(isoString: string | null | undefined, includeT
 
 export function formatNumber(num: number | null | undefined): string {
   if (num === null || num === undefined) return '—';
-  return new Intl.NumberFormat('fa-IR').format(num);
+  return new Intl.NumberFormat('en-US').format(num);
 }
 
 export function toPersianDigits(str: string | number): string {
