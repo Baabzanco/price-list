@@ -56,8 +56,8 @@ export function PriceList() {
   };
 
   const getFitTextClass = (name: string) => {
-    if (name.length > 25) return 'text-[11.5px] leading-tight whitespace-normal break-words';
-    if (name.length > 18) return 'text-[12px] leading-snug whitespace-normal break-words';
+    if (name.length > 25) return 'text-[11.5px] leading-tight whitespace-normal break-words tracking-tight';
+    if (name.length > 18) return 'text-[12px] leading-snug whitespace-normal break-words tracking-tight';
     return 'text-[13px] whitespace-normal';
   };
 
@@ -186,21 +186,26 @@ export function PriceList() {
               <tr key={product.id} className="text-black">
                 <td 
                   dir="rtl"
-                  className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[65%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
+                  className={`py-1 pr-2 pl-1 font-bold border-l border-gray-300 w-[65%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
                   style={{
                     fontSize: product.fontSize ? `${product.fontSize}px` : undefined,
-                    paddingRight: depth > 0 ? `${12 + depth * 12}px` : '12px',
+                    paddingRight: depth > 0 ? `${8 + depth * 8}px` : '8px',
+                    paddingLeft: '4px',
                     textAlign: 'right',
-                    textAlignLast: 'right'
+                    textAlignLast: 'right',
+                    wordSpacing: product.name.length > 20 ? '-1.5px' : '-0.75px',
+                    letterSpacing: '-0.2px'
                   }}
                 >
                   <span 
-                    className="block text-right w-full" 
+                    className="block w-full text-right" 
                     dir="rtl" 
                     style={{ 
                       fontSize: product.fontSize ? `${product.fontSize}px` : undefined,
                       textAlign: 'right', 
-                      textAlignLast: 'right' 
+                      textAlignLast: 'right',
+                      wordSpacing: product.name.length > 20 ? '-1.5px' : '-0.75px',
+                      letterSpacing: '-0.2px'
                     }}
                   >
                     {product.name.trim()}
@@ -247,21 +252,26 @@ export function PriceList() {
               <tr key={product.id} className="text-black">
                 <td 
                   dir="rtl"
-                  className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[82%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
+                  className={`py-1 pr-2 pl-1 font-bold border-l border-gray-300 w-[82%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
                   style={{
                     fontSize: product.fontSize ? `${product.fontSize}px` : undefined,
-                    paddingRight: depth > 0 ? `${12 + depth * 12}px` : '12px',
+                    paddingRight: depth > 0 ? `${8 + depth * 8}px` : '8px',
+                    paddingLeft: '4px',
                     textAlign: 'right',
-                    textAlignLast: 'right'
+                    textAlignLast: 'right',
+                    wordSpacing: product.name.length > 20 ? '-1.5px' : '-0.75px',
+                    letterSpacing: '-0.2px'
                   }}
                 >
                   <span 
-                    className="block text-right w-full" 
+                    className="block w-full text-right" 
                     dir="rtl" 
                     style={{ 
                       fontSize: product.fontSize ? `${product.fontSize}px` : undefined,
                       textAlign: 'right', 
-                      textAlignLast: 'right' 
+                      textAlignLast: 'right',
+                      wordSpacing: product.name.length > 20 ? '-1.5px' : '-0.75px',
+                      letterSpacing: '-0.2px'
                     }}
                   >
                     {product.name.trim()}
