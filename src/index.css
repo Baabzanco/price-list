@@ -82,14 +82,13 @@
     display: none !important;
   }
   
-  /* Force exact single A4 page */
+  /* Force exact single A4 page without clipping */
   .print-container {
     width: 210mm !important;
     height: 297mm !important;
     max-height: 297mm !important;
-    min-height: 297mm !important;
     margin: 0 !important;
-    padding: 6mm 10mm !important;
+    padding: 4mm 8mm !important;
     box-shadow: none !important;
     box-sizing: border-box !important;
     display: flex !important;
@@ -105,15 +104,66 @@
   }
   
   .print-container header {
-    margin-bottom: 2.5mm !important;
-    padding-bottom: 2.5mm !important;
+    margin-bottom: 1.5mm !important;
+    padding-bottom: 1.5mm !important;
+    border-bottom-width: 1.5px !important;
   }
 
-  /* Ensure grids don't overflow */
+  .print-container header h1 {
+    font-size: 18px !important;
+    line-height: 1.2 !important;
+  }
+
+  .print-container header h1 span {
+    font-size: 20px !important;
+  }
+
+  .print-container header p {
+    font-size: 10px !important;
+    margin-top: 1px !important;
+  }
+
+  .print-container header .flex-\[0\.5\] > div {
+    padding: 1mm 3mm !important;
+  }
+
+  .print-container header .flex-\[0\.5\] span:last-child {
+    font-size: 13px !important;
+  }
+
+  /* Compact footer for print */
+  .print-container footer {
+    margin-top: 1.5mm !important;
+    padding-top: 1.5mm !important;
+    border-top-width: 1.5px !important;
+    font-size: 11px !important;
+  }
+
+  .print-container footer div {
+    padding: 1.5mm 3.5mm !important;
+    font-size: 11px !important;
+  }
+
+  .print-container footer span.text-2xl {
+    font-size: 14px !important;
+    padding: 1mm 3mm !important;
+  }
+
+  .print-container footer span.text-xl {
+    font-size: 11px !important;
+  }
+
+  /* Ensure grids don't overflow or clip */
   .print-grid {
-    gap: 4mm !important;
-    flex: 1 1 0% !important;
+    gap: 3mm !important;
+    flex: 1 1 auto !important;
     min-height: 0 !important;
+  }
+
+  .print-grid > div {
+    overflow: visible !important;
+    height: auto !important;
+    border-width: 2px !important;
   }
   
   /* Force background colors on print */
@@ -136,14 +186,15 @@
     break-inside: avoid !important;
   }
 
-  /* Make vertical cell padding compact in print so all rows comfortably fit single page */
+  /* Make vertical cell padding compact in print so all rows comfortably fit single page without cutting */
   .print-container td {
-    padding-top: 1.5px !important;
-    padding-bottom: 1.5px !important;
+    padding-top: 0.5px !important;
+    padding-bottom: 0.5px !important;
+    line-height: 1.15 !important;
   }
 
   .print-container th {
-    padding-top: 2px !important;
-    padding-bottom: 2px !important;
+    padding-top: 1px !important;
+    padding-bottom: 1px !important;
   }
 }
