@@ -433,18 +433,18 @@ export function Products() {
       {/* Products List */}
       <div className="bg-white dark:bg-surface-900 rounded-2xl border border-surface-200 dark:border-surface-800 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-right text-sm">
-            <thead className="bg-surface-50 dark:bg-surface-800/50 text-surface-600 dark:text-surface-400 border-b border-surface-200 dark:border-surface-800">
-              <tr>
-                <th className="pl-2 pr-6 py-4 w-10"></th>
-                <th className="px-6 py-4 font-medium">نام قلم</th>
-                <th className="px-6 py-4 font-medium">دسته‌بندی</th>
-                <th className="px-6 py-4 font-medium">پیکربندی ستون‌ها</th>
-                <th className="px-6 py-4 font-medium text-left">عملیات</th>
-              </tr>
-            </thead>
-            
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <table className="w-full text-right text-sm">
+              <thead className="bg-surface-50 dark:bg-surface-800/50 text-surface-600 dark:text-surface-400 border-b border-surface-200 dark:border-surface-800">
+                <tr>
+                  <th className="pl-2 pr-6 py-4 w-10"></th>
+                  <th className="px-6 py-4 font-medium">نام قلم</th>
+                  <th className="px-6 py-4 font-medium">دسته‌بندی</th>
+                  <th className="px-6 py-4 font-medium">پیکربندی ستون‌ها</th>
+                  <th className="px-6 py-4 font-medium text-left">عملیات</th>
+                </tr>
+              </thead>
+              
               <SortableContext items={filteredProducts.map(p => p.id)} strategy={verticalListSortingStrategy}>
                 <tbody className="divide-y divide-surface-200 dark:divide-surface-800">
                   {filteredProducts.map(product => {
@@ -476,9 +476,8 @@ export function Products() {
                   )}
                 </tbody>
               </SortableContext>
-            </DndContext>
-  
-          </table>
+            </table>
+          </DndContext>
         </div>
       </div>
     </div>

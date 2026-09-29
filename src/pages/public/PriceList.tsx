@@ -180,34 +180,34 @@ export function PriceList() {
               </tr>
             );
           } else {
-            // Col 2
+            // Col 2 (گوساله جوانه، مرغ و سایر اقلام ستون دوم)
             let priceCells;
             if (!product.hasLamb && !product.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[35%]">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[18%] whitespace-nowrap">
                   {product.priceLamb ? formatNumber(product.priceLamb) : (product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-')}
                 </td>
               );
             } else if (category.hasLamb && category.hasTwoTeeth) {
               priceCells = (
                 <>
-                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center text-[15px] text-black w-[17.5%]">
+                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center text-[15px] text-black w-[9%] whitespace-nowrap">
                     {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                   </td>
-                  <td className="py-1 px-1 font-bold text-center text-[15px] text-black w-[17.5%]">
+                  <td className="py-1 px-1 font-bold text-center text-[15px] text-black w-[9%] whitespace-nowrap">
                     {product.hasTwoTeeth && product.priceTwoTeeth ? formatNumber(product.priceTwoTeeth) : '-'}
                   </td>
                 </>
               );
             } else if (category.hasLamb || category.hasTwoTeeth) {
               priceCells = (
-                <td colSpan={2} className="py-1 px-2 font-bold text-center text-[15px] text-black w-[35%]">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-[15px] text-black w-[18%] whitespace-nowrap">
                   {formatNumber(product.priceLamb || product.priceTwoTeeth)}
                 </td>
               );
             } else {
               priceCells = (
-                <td colSpan={2} className="py-1 px-2 font-bold text-center text-gray-400 w-[35%]">
+                <td colSpan={2} className="py-1 px-1 font-bold text-center text-gray-400 w-[18%] whitespace-nowrap">
                   -
                 </td>
               );
@@ -216,7 +216,7 @@ export function PriceList() {
             return (
               <tr key={product.id} className="text-black">
                 <td 
-                  className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[65%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
+                  className={`py-1 px-3 font-bold text-right border-l border-gray-300 w-[82%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
                   style={product.fontSize ? { fontSize: `${product.fontSize}px` } : undefined}
                 >
                   {'\u00A0\u00A0'.repeat(depth)}{product.name}
