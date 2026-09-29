@@ -141,7 +141,10 @@ export function PriceList() {
     return (
       <React.Fragment key={category.id}>
         {headerRow}
-        {categoryProducts.map(product => {
+        {categoryProducts.map((product, pIdx) => {
+          const isEven = pIdx % 2 === 1;
+          const rowBg = isEven ? 'bg-slate-100 dark:bg-slate-200' : 'bg-white';
+
           if (colIndex === 1) {
             // Col 1 has 3 sub-columns: name, lamb, two teeth.
             let priceCells;
@@ -154,7 +157,7 @@ export function PriceList() {
             } else if (category.hasLamb && category.hasTwoTeeth) {
               priceCells = (
                 <>
-                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center w-[17.5%] font-sans tabular-nums text-black text-[15px] whitespace-nowrap">
+                  <td className="py-1 px-1 font-bold border-l border-gray-400 text-center w-[17.5%] font-sans tabular-nums text-black text-[15px] whitespace-nowrap">
                     {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                   </td>
                   <td className="py-1 px-1 font-bold text-center w-[17.5%] font-sans tabular-nums text-black text-[15px] whitespace-nowrap">
@@ -183,10 +186,10 @@ export function PriceList() {
             }
 
             return (
-              <tr key={product.id} className="text-black">
+              <tr key={product.id} className={`${rowBg} text-black transition-colors`}>
                 <td 
                   dir="rtl"
-                  className={`py-1 pr-2 pl-1 font-bold border-l border-gray-300 w-[65%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
+                  className={`py-1 pr-2 pl-1 font-bold border-l border-gray-400 w-[65%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
                   style={{
                     fontSize: product.fontSize ? `${product.fontSize}px` : undefined,
                     paddingRight: depth > 0 ? `${8 + depth * 8}px` : '8px',
@@ -226,7 +229,7 @@ export function PriceList() {
             } else if (category.hasLamb && category.hasTwoTeeth) {
               priceCells = (
                 <>
-                  <td className="py-1 px-1 font-bold border-l border-gray-300 text-center text-[15px] text-black w-[9%] whitespace-nowrap font-sans tabular-nums">
+                  <td className="py-1 px-1 font-bold border-l border-gray-400 text-center text-[15px] text-black w-[9%] whitespace-nowrap font-sans tabular-nums">
                     {product.hasLamb && product.priceLamb ? formatNumber(product.priceLamb) : '-'}
                   </td>
                   <td className="py-1 px-1 font-bold text-center text-[15px] text-black w-[9%] whitespace-nowrap font-sans tabular-nums">
@@ -249,10 +252,10 @@ export function PriceList() {
             }
 
             return (
-              <tr key={product.id} className="text-black">
+              <tr key={product.id} className={`${rowBg} text-black transition-colors`}>
                 <td 
                   dir="rtl"
-                  className={`py-1 pr-2 pl-1 font-bold border-l border-gray-300 w-[82%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
+                  className={`py-1 pr-2 pl-1 font-bold border-l border-gray-400 w-[82%] overflow-hidden ${product.fontSize ? 'whitespace-normal leading-snug' : getFitTextClass(product.name)}`}
                   style={{
                     fontSize: product.fontSize ? `${product.fontSize}px` : undefined,
                     paddingRight: depth > 0 ? `${8 + depth * 8}px` : '8px',
@@ -383,7 +386,7 @@ export function PriceList() {
             <div className="flex flex-col h-full border-[3px] border-[#CD78B3] dark:border-[#d85c96] rounded-xl overflow-hidden shadow-sm bg-white">
               <table className="w-full h-full text-center text-[13px] font-medium bg-white">
                 
-                <tbody className="divide-y divide-gray-300">
+                <tbody className="divide-y divide-gray-400">
                   {col1RootCategories.map(cat => renderCategoryRecursive(cat, 1, 0))}
                 </tbody>
               </table>
@@ -392,7 +395,7 @@ export function PriceList() {
             {/* Column 2 (Left Side in Persian RTL): Gousale and Morgh */}
             <div className="flex flex-col h-full border-[3px] border-[#CD78B3] dark:border-[#d85c96] rounded-xl overflow-hidden shadow-sm bg-white">
               <table className="w-full h-full text-center text-[13px] font-medium bg-white">
-                <tbody className="divide-y divide-gray-300">
+                <tbody className="divide-y divide-gray-400">
                   {col2RootCategories.map(cat => renderCategoryRecursive(cat, 2, 0))}
                 </tbody>
               </table>
