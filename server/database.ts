@@ -52,6 +52,7 @@ export interface Settings {
   lastUpdated: string | null;
   footerTextRight?: string;
   footerTextLeft?: string;
+  dateMode?: 'today' | 'last_updated';
 }
 
 const SEED_CATEGORIES: Category[] = [
@@ -145,6 +146,7 @@ const DEFAULT_SETTINGS: Settings = {
   lastUpdated: null,
   footerTextRight: 'پاسخگویی از ساعت',
   footerTextLeft: 'تماس با خط ویژه:',
+  dateMode: 'today',
 };
 
 const dbPath = path.join(process.cwd(), 'data', 'database.sqlite');

@@ -49,6 +49,7 @@ export interface Settings {
   lastUpdated: string | null;
   footerTextRight?: string;
   footerTextLeft?: string;
+  dateMode?: 'today' | 'last_updated';
 }
 
 class APIClient {

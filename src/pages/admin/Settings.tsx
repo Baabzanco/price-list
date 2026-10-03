@@ -232,6 +232,18 @@ export function Settings() {
                 className="w-full px-4 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 dark:bg-surface-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
               />
             </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-medium text-surface-700 dark:text-surface-300">نحوه نمایش تاریخ بالای لیست قیمت</label>
+              <select
+                value={form.dateMode || 'today'}
+                onChange={e => setForm({ ...form, dateMode: e.target.value as 'today' | 'last_updated' })}
+                className="w-full px-4 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 dark:bg-surface-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+              >
+                <option value="today">بروزرسانی اتوماتیک (تاریخ روز)</option>
+                <option value="last_updated">تاریخ آخرین ویرایش قیمت‌ها</option>
+              </select>
+            </div>
           </div>
 
           <hr className="border-surface-200 dark:border-surface-800" />

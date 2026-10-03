@@ -359,7 +359,11 @@ export function PriceList() {
               <div className="text-center flex flex-col items-center justify-center gap-1 bg-gray-50 dark:bg-white/10 px-4 py-2 rounded-xl border border-gray-100 dark:border-transparent shadow-sm">
                 <span className="text-xs font-bold text-gray-500 dark:text-gray-300">تاریخ:</span>
                 <span className="text-lg font-black text-[#124A57] dark:text-white tracking-wide" dir="ltr">
-                  {formatPersianDate(settings.lastUpdated || new Date().toISOString()).split(' ')[0]}
+                  {formatPersianDate(
+                    settings.dateMode === 'last_updated'
+                      ? (settings.lastUpdated || new Date().toISOString())
+                      : new Date().toISOString()
+                  ).split(' ')[0]}
                 </span>
               </div>
             </div>
