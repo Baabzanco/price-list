@@ -16,7 +16,7 @@ export function PriceEditor() {
   const [bulkTarget, setBulkTarget] = useState('all');
   const [bulkType, setBulkType] = useState<'fixed' | 'percent'>('fixed');
   const [bulkValue, setBulkValue] = useState('');
-  const [bulkField, setBulkField] = useState<'both' | 'lamb' | 'two_teeth'>('both');
+  const [bulkField, setBulkField] = useState<'both' | 'lamb' | 'two_teeth' | 'none'>('both');
 
   // Initialize edits from DB on load
   useEffect(() => {
@@ -98,12 +98,20 @@ export function PriceEditor() {
           }
         };
 
-        if ((bulkField === 'both' || bulkField === 'lamb') && (category?.hasLamb ?? true)) {
-          updated.priceLamb = applyChange(currentEdit.priceLamb);
-        }
-        
-        if ((bulkField === 'both' || bulkField === 'two_teeth') && (category?.hasTwoTeeth ?? true)) {
-          updated.priceTwoTeeth = applyChange(currentEdit.priceTwoTeeth);
+        const isNoneProduct = !p.hasLamb && !p.hasTwoTeeth;
+
+        if (isNoneProduct) {
+          if (bulkField === 'none') {
+            updated.priceLamb = applyChange(currentEdit.priceLamb);
+          }
+        } else {
+          if ((bulkField === 'both' || bulkField === 'lamb') && (category?.hasLamb ?? true)) {
+            updated.priceLamb = applyChange(currentEdit.priceLamb);
+          }
+          
+          if ((bulkField === 'both' || bulkField === 'two_teeth') && (category?.hasTwoTeeth ?? true)) {
+            updated.priceTwoTeeth = applyChange(currentEdit.priceTwoTeeth);
+          }
         }
 
         next[p.id] = updated;
@@ -194,6 +202,7 @@ export function PriceEditor() {
             <option value="both">هر دو (بره و دودندان)</option>
             <option value="lamb">فقط قیمت بره</option>
             <option value="two_teeth">فقط قیمت دودندان</option>
+            <option value="none">هیچکدام (قیمت واحد / اقلام بدون بره و دودندان)</option>
           </select>
         </div>
 
