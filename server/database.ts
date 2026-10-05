@@ -1,6 +1,11 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
+
+export function hashPassword(password: string): string {
+  return crypto.createHash('sha256').update(password).digest('hex');
+}
 
 export interface Category {
   id: string;
@@ -199,6 +204,15 @@ export function initDb() {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'admin',
+      createdAt TEXT NOT NULL
+    );
   `);
   try { db.prepare("ALTER TABLE categories ADD COLUMN parentId TEXT").run(); } catch(e){}
   try { db.prepare("ALTER TABLE categories ADD COLUMN hasLamb INTEGER NOT NULL DEFAULT 1").run(); } catch(e){}
@@ -236,6 +250,13 @@ export function initDb() {
     });
     
     transaction();
+  }
+
+  // Seed default user if empty
+  const userCount = db.prepare('SELECT count(*) as count FROM users').get() as { count: number };
+  if (userCount.count === 0) {
+    db.prepare('INSERT INTO users (id, username, password, name, role, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(uuidv4(), 'admin', hashPassword('admin'), 'مدیر سیستم', 'admin', new Date().toISOString());
   }
 }
 
@@ -478,4 +499,41 @@ export function restoreBackupData(data: any) {
 
 export function runMigration(data: any) {
   return restoreBackupData(data);
+}
+
+export function getUsers() {
+  const rows = db.prepare('SELECT id, username, name, role, createdAt FROM users ORDER BY createdAt DESC').all();
+  return rows;
+}
+
+export function addUser(username: string, passwordPlain: string, name: string, role: string) {
+  const id = uuidv4();
+  const passwordHash = hashPassword(passwordPlain);
+  const createdAt = new Date().toISOString();
+  db.prepare('INSERT INTO users (id, username, password, name, role, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, username, passwordHash, name, role, createdAt);
+  return { id, username, name, role, createdAt };
+}
+
+export function updateUser(id: string, username: string, passwordPlain: string | null, name: string, role: string) {
+  if (passwordPlain) {
+    const passwordHash = hashPassword(passwordPlain);
+    db.prepare('UPDATE users SET username = ?, password = ?, name = ?, role = ? WHERE id = ?')
+      .run(username, passwordHash, name, role, id);
+  } else {
+    db.prepare('UPDATE users SET username = ?, name = ?, role = ? WHERE id = ?')
+      .run(username, name, role, id);
+  }
+  return { id, username, name, role };
+}
+
+export function removeUser(id: string) {
+  db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  return { success: true };
+}
+
+export function validateUser(username: string, passwordPlain: string) {
+  const passwordHash = hashPassword(passwordPlain);
+  const user = db.prepare('SELECT id, username, name, role FROM users WHERE username = ? AND password = ?').get(username, passwordHash) as any;
+  return user || null;
 }

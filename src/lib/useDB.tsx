@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { db, Category, Product, PriceHistory, Settings } from './db';
+import { db, Category, Product, PriceHistory, Settings, User } from './db';
 
 interface DBState {
   categories: Category[];
@@ -14,13 +14,41 @@ interface DBState {
   };
   isLoading: boolean;
   error: string | null;
+  user: User | null;
   refresh: () => Promise<void>;
+  login: (username: string, passwordPlain: string) => Promise<void>;
+  logout: () => void;
 }
 
 const DBContext = createContext<DBState | null>(null);
 
 export function DBProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<Omit<DBState, 'refresh'>>({
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('price_list_user');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+
+  const handleLogin = async (username: string, passwordPlain: string) => {
+    const res = await db.login(username, passwordPlain);
+    if (res.success && res.user) {
+      setUser(res.user);
+      localStorage.setItem('price_list_user', JSON.stringify(res.user));
+    }
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('price_list_user');
+  };
+
+  const [data, setData] = useState<Omit<DBState, 'refresh' | 'user' | 'login' | 'logout'>>({
     categories: [],
     products: [],
     history: [],
@@ -96,7 +124,7 @@ export function DBProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <DBContext.Provider value={{ ...data, refresh }}>
+    <DBContext.Provider value={{ ...data, refresh, user, login: handleLogin, logout: handleLogout }}>
       {data.isLoading ? (
         <div className="min-h-screen flex items-center justify-center bg-surface-50 dark:bg-surface-900 text-primary">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>

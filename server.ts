@@ -101,6 +101,55 @@ async function startServer() {
     }
   });
 
+  // User & Auth API
+  api.post('/auth/login', (req, res) => {
+    try {
+      const user = db.validateUser(req.body.username, req.body.password);
+      if (user) {
+        res.json({ success: true, user });
+      } else {
+        res.status(401).json({ error: 'نام کاربری یا رمز عبور اشتباه است.' });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.get('/users', (req, res) => {
+    try {
+      res.json(db.getUsers());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.post('/users', (req, res) => {
+    try {
+      const newUser = db.addUser(req.body.username, req.body.password, req.body.name, req.body.role);
+      res.json(newUser);
+    } catch (e: any) {
+      res.status(400).json({ error: 'نام کاربری از قبل وجود دارد یا خطایی رخ داده است.' });
+    }
+  });
+
+  api.put('/users/:id', (req, res) => {
+    try {
+      const updated = db.updateUser(req.params.id, req.body.username, req.body.password || null, req.body.name, req.body.role);
+      res.json(updated);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || 'خطا در بروزرسانی کاربر' });
+    }
+  });
+
+  api.delete('/users/:id', (req, res) => {
+    try {
+      db.removeUser(req.params.id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   app.use('/api', api);
 
   // Vite middleware for development

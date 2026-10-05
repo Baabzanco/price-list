@@ -185,6 +185,44 @@ class APIClient {
       body: JSON.stringify(data)
     });
   }
+
+  // Auth & Users
+  async login(username: string, passwordPlain: string): Promise<{ success: boolean; user: User }> {
+    return this.request<{ success: boolean; user: User }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password: passwordPlain })
+    });
+  }
+
+  async getUsers(): Promise<User[]> {
+    return this.request<User[]>('/users');
+  }
+
+  async addUser(userData: any): Promise<User> {
+    return this.request<User>('/users', {
+      method: 'POST',
+      body: JSON.stringify(userData)
+    });
+  }
+
+  async updateUser(id: string, userData: any): Promise<User> {
+    return this.request<User>(`/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(userData)
+    });
+  }
+
+  async removeUser(id: string): Promise<void> {
+    await this.request<void>(`/users/${id}`, { method: 'DELETE' });
+  }
+}
+
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  role: string;
+  createdAt: string;
 }
 
 export const db = new APIClient();

@@ -7,6 +7,7 @@ import { Categories } from './pages/admin/Categories';
 import { Products } from './pages/admin/Products';
 import { History } from './pages/admin/History';
 import { Settings } from './pages/admin/Settings';
+import { UsersManagement } from './pages/admin/UsersManagement';
 import { PriceList } from './pages/public/PriceList';
 import { DBProvider } from './lib/useDB';
 
@@ -26,6 +27,7 @@ export default function App() {
             <Route path="categories" element={<Categories />} />
             <Route path="history" element={<History />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="users" element={<UsersManagement />} />
           </Route>
         </Routes>
       </Router>
