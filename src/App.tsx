@@ -8,6 +8,7 @@ import { Products } from './pages/admin/Products';
 import { History } from './pages/admin/History';
 import { Settings } from './pages/admin/Settings';
 import { UsersManagement } from './pages/admin/UsersManagement';
+import { IntegrationsManagement } from './pages/admin/IntegrationsManagement';
 import { PriceList } from './pages/public/PriceList';
 import { DBProvider } from './lib/useDB';
 
@@ -28,6 +29,7 @@ export default function App() {
             <Route path="history" element={<History />} />
             <Route path="settings" element={<Settings />} />
             <Route path="users" element={<UsersManagement />} />
+            <Route path="integrations" element={<IntegrationsManagement />} />
           </Route>
         </Routes>
       </Router>

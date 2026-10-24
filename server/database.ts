@@ -1,11 +1,50 @@
 import Database from 'better-sqlite3';
 import path from 'path';
+import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'crypto';
 
+const PBKDF2_ITERATIONS = 100000;
+const PBKDF2_KEYLEN = 32;
+const PBKDF2_DIGEST = 'sha256';
+
 export function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derivedKey = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEYLEN, PBKDF2_DIGEST).toString('hex');
+  return `pbkdf2:${PBKDF2_ITERATIONS}:${salt}:${derivedKey}`;
 }
+
+export function verifyPassword(password: string, storedHash: string): boolean {
+  if (!password || !storedHash) return false;
+
+  // New salted PBKDF2 format
+  if (storedHash.startsWith('pbkdf2:')) {
+    const parts = storedHash.split(':');
+    if (parts.length !== 4) return false;
+    const iterations = parseInt(parts[1], 10);
+    const salt = parts[2];
+    const originalHash = parts[3];
+    const derivedKey = crypto.pbkdf2Sync(password, salt, iterations, originalHash.length / 2, PBKDF2_DIGEST).toString('hex');
+    try {
+      return crypto.timingSafeEqual(Buffer.from(derivedKey, 'hex'), Buffer.from(originalHash, 'hex'));
+    } catch {
+      return false;
+    }
+  }
+
+  // Legacy fallback: unsalted single-pass SHA-256 (64 hex characters)
+  if (storedHash.length === 64) {
+    const legacyHash = crypto.createHash('sha256').update(password).digest('hex');
+    try {
+      return crypto.timingSafeEqual(Buffer.from(legacyHash, 'hex'), Buffer.from(storedHash, 'hex'));
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
 
 export interface Category {
   id: string;
@@ -154,7 +193,11 @@ const DEFAULT_SETTINGS: Settings = {
   dateMode: 'today',
 };
 
-const dbPath = path.join(process.cwd(), 'data', 'database.sqlite');
+const dbDir = path.join(process.cwd(), 'data');
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
+const dbPath = path.join(dbDir, 'database.sqlite');
 const db = new Database(dbPath);
 
 // Enable WAL for better concurrency and foreign keys
@@ -213,6 +256,29 @@ export function initDb() {
       role TEXT NOT NULL DEFAULT 'admin',
       createdAt TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      userId TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      expiresAt TEXT NOT NULL,
+      FOREIGN KEY(userId) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      keyPrefix TEXT NOT NULL,
+      keyHash TEXT NOT NULL,
+      scopes TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      expiresAt TEXT,
+      lastUsedAt TEXT,
+      isActive INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+    CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(keyHash);
   `);
   try { db.prepare("ALTER TABLE categories ADD COLUMN parentId TEXT").run(); } catch(e){}
   try { db.prepare("ALTER TABLE categories ADD COLUMN hasLamb INTEGER NOT NULL DEFAULT 1").run(); } catch(e){}
@@ -258,6 +324,17 @@ export function initDb() {
     db.prepare('INSERT INTO users (id, username, password, name, role, createdAt) VALUES (?, ?, ?, ?, ?, ?)')
       .run(uuidv4(), 'admin', hashPassword('admin'), 'مدیر سیستم', 'admin', new Date().toISOString());
   }
+
+  // Seed default internal read-only API key if empty
+  const keyCount = db.prepare('SELECT count(*) as count FROM api_keys').get() as { count: number };
+  if (keyCount.count === 0) {
+    const rawKey = 'plk_internal_readonly_' + crypto.randomBytes(16).toString('hex');
+    const keyPrefix = rawKey.substring(0, 10);
+    const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
+    db.prepare('INSERT INTO api_keys (id, name, keyPrefix, keyHash, scopes, createdAt, expiresAt, isActive) VALUES (?, ?, ?, ?, ?, ?, NULL, 1)')
+      .run(uuidv4(), 'کلید پیش‌فرض سرویس داخلی (سیستم دوم)', keyPrefix, keyHash, JSON.stringify(['read:products', 'read:categories', 'read:prices']), new Date().toISOString());
+    console.log(`[AUTH] Generated default internal read-only API Key: ${rawKey}`);
+  }
 }
 
 export function getCategories(): Category[] {
@@ -282,6 +359,19 @@ export function updateCategory(id: string, name: string, parentId: string | null
 
 export function toggleCategoryActive(id: string) {
   db.prepare('UPDATE categories SET isActive = NOT isActive WHERE id = ?').run(id);
+}
+
+export function deleteCategory(id: string) {
+  const productCount = (db.prepare('SELECT count(*) as count FROM products WHERE categoryId = ?').get(id) as any).count;
+  if (productCount > 0) {
+    throw new Error(`امکان حذف دسته‌بندی وجود ندارد؛ ${productCount} قلم کالا به این دسته‌بندی اختصاص دارد.`);
+  }
+  const childCount = (db.prepare('SELECT count(*) as count FROM categories WHERE parentId = ?').get(id) as any).count;
+  if (childCount > 0) {
+    throw new Error(`امکان حذف دسته‌بندی وجود ندارد؛ این دسته‌بندی دارای ${childCount} زیرمجموعه است.`);
+  }
+  db.prepare('DELETE FROM categories WHERE id = ?').run(id);
+  return { success: true };
 }
 
 export function getProducts(): Product[] {
@@ -311,10 +401,15 @@ export function removeProduct(id: string) {
 }
 
 export function reorderProducts(updates: { id: string, sortOrder: number }[]) {
+  if (!Array.isArray(updates)) {
+    throw new Error('لیست ترتیب محصولات معتبر نیست.');
+  }
   const stmt = db.prepare('UPDATE products SET sortOrder = ? WHERE id = ?');
-  const transaction = db.transaction((updates) => {
-    for (const update of updates) {
-      stmt.run(update.sortOrder, update.id);
+  const transaction = db.transaction((items) => {
+    for (const update of items) {
+      if (update && update.id) {
+        stmt.run(Number(update.sortOrder) || 0, update.id);
+      }
     }
   });
   transaction(updates);
@@ -331,6 +426,9 @@ export function updateProduct(id: string, name: string, categoryId: string, hasL
 }
 
 export function updateProductPrices(updates: { id: string; priceLamb: number | null; priceTwoTeeth: number | null }[], userId: string) {
+  if (!Array.isArray(updates)) {
+    throw new Error('لیست قیمت‌های ارسالی معتبر نیست.');
+  }
   const now = new Date().toISOString();
   
   const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
@@ -516,24 +614,241 @@ export function addUser(username: string, passwordPlain: string, name: string, r
 }
 
 export function updateUser(id: string, username: string, passwordPlain: string | null, name: string, role: string) {
-  if (passwordPlain) {
-    const passwordHash = hashPassword(passwordPlain);
+  const existing = db.prepare('SELECT username FROM users WHERE id = ?').get(id) as any;
+  if (!existing) {
+    throw new Error('کاربر مورد نظر یافت نشد.');
+  }
+
+  // Ensure root admin stays admin
+  const effectiveRole = existing.username === 'admin' ? 'admin' : role;
+
+  if (passwordPlain && passwordPlain.trim() !== '') {
+    const passwordHash = hashPassword(passwordPlain.trim());
     db.prepare('UPDATE users SET username = ?, password = ?, name = ?, role = ? WHERE id = ?')
-      .run(username, passwordHash, name, role, id);
+      .run(username.trim(), passwordHash, name.trim(), effectiveRole, id);
   } else {
     db.prepare('UPDATE users SET username = ?, name = ?, role = ? WHERE id = ?')
-      .run(username, name, role, id);
+      .run(username.trim(), name.trim(), effectiveRole, id);
   }
-  return { id, username, name, role };
+  return { id, username: username.trim(), name: name.trim(), role: effectiveRole };
 }
 
-export function removeUser(id: string) {
+export function removeUser(id: string, requestingUserId?: string) {
+  const user = db.prepare('SELECT username, role FROM users WHERE id = ?').get(id) as any;
+  if (!user) {
+    throw new Error('کاربر مورد نظر یافت نشد.');
+  }
+  if (user.username === 'admin') {
+    throw new Error('حساب کاربری ریشه (admin) غیرقابل حذف است.');
+  }
+  if (requestingUserId && id === requestingUserId) {
+    throw new Error('شما نمی‌توانید حساب کاربری فعال خودتان را حذف کنید.');
+  }
+
+  // Ensure at least one admin remains
+  if (user.role === 'admin') {
+    const adminCount = (db.prepare("SELECT count(*) as count FROM users WHERE role = 'admin'").get() as any).count;
+    if (adminCount <= 1) {
+      throw new Error('حداقل یک کاربر با نقش مدیر ارشد باید در سیستم فعال باشد.');
+    }
+  }
+
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
   return { success: true };
 }
 
 export function validateUser(username: string, passwordPlain: string) {
-  const passwordHash = hashPassword(passwordPlain);
-  const user = db.prepare('SELECT id, username, name, role FROM users WHERE username = ? AND password = ?').get(username, passwordHash) as any;
-  return user || null;
+  const user = db.prepare('SELECT id, username, password, name, role FROM users WHERE username = ?').get(username) as any;
+  if (!user) return null;
+
+  const isValid = verifyPassword(passwordPlain, user.password);
+  if (!isValid) return null;
+
+  // Transparently migrate legacy SHA-256 hash to PBKDF2
+  if (!user.password.startsWith('pbkdf2:')) {
+    try {
+      const newSaltedHash = hashPassword(passwordPlain);
+      db.prepare('UPDATE users SET password = ? WHERE id = ?').run(newSaltedHash, user.id);
+      console.log(`[AUTH] Successfully migrated password hash to PBKDF2 for user: ${username}`);
+    } catch (err) {
+      console.error('Failed to migrate password hash', err);
+    }
+  }
+
+  return {
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    role: user.role
+  };
 }
+
+// --- Session Management ---
+
+export function createSession(userId: string, ttlDays = 7): string {
+  const token = crypto.randomBytes(32).toString('hex');
+  const createdAt = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000).toISOString();
+  
+  db.prepare('INSERT INTO sessions (token, userId, createdAt, expiresAt) VALUES (?, ?, ?, ?)').run(
+    token, userId, createdAt, expiresAt
+  );
+  return token;
+}
+
+export function getSessionUser(token: string) {
+  if (!token) return null;
+  const now = new Date().toISOString();
+  const session = db.prepare(`
+    SELECT s.token, s.userId, s.expiresAt, u.id, u.username, u.name, u.role
+    FROM sessions s
+    JOIN users u ON s.userId = u.id
+    WHERE s.token = ? AND s.expiresAt > ?
+  `).get(token, now) as any;
+  
+  if (!session) return null;
+  return {
+    id: session.id,
+    username: session.username,
+    name: session.name,
+    role: session.role
+  };
+}
+
+export function deleteSession(token: string) {
+  if (!token) return;
+  db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+}
+
+// --- API Key Management (Internal Read-Only API) ---
+
+export interface ApiKeyRecord {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  keyHash: string;
+  scopes: string[];
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  isActive: boolean;
+}
+
+const ALLOWED_READ_SCOPES = ['read:products', 'read:categories', 'read:prices'];
+
+export function createApiKey(name: string, requestedScopes: string[] = ['read:products', 'read:categories', 'read:prices'], expiresInDays?: number | null): { key: string; record: Omit<ApiKeyRecord, 'keyHash'> } {
+  if (!name || typeof name !== 'string' || name.trim() === '') {
+    throw new Error('عنوان سامانه برای صدور کلید الزامی است.');
+  }
+
+  // Filter requested scopes strictly to allowed read-only scopes
+  const scopes = Array.isArray(requestedScopes)
+    ? requestedScopes.filter(s => ALLOWED_READ_SCOPES.includes(s))
+    : ALLOWED_READ_SCOPES;
+
+  if (scopes.length === 0) {
+    throw new Error('حداقل یکی از مجوزهای خواندن باید انتخاب شود.');
+  }
+
+  const id = uuidv4();
+  const rawSecret = crypto.randomBytes(24).toString('hex');
+  const fullKey = `plk_${rawSecret}`;
+  const keyPrefix = fullKey.substring(0, 10);
+  const keyHash = crypto.createHash('sha256').update(fullKey).digest('hex');
+  const createdAt = new Date().toISOString();
+  
+  let expiresAt: string | null = null;
+  if (expiresInDays && Number(expiresInDays) > 0) {
+    expiresAt = new Date(Date.now() + Number(expiresInDays) * 24 * 60 * 60 * 1000).toISOString();
+  }
+  
+  db.prepare(`
+    INSERT INTO api_keys (id, name, keyPrefix, keyHash, scopes, createdAt, expiresAt, isActive)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+  `).run(id, name.trim(), keyPrefix, keyHash, JSON.stringify(scopes), createdAt, expiresAt);
+  
+  return {
+    key: fullKey,
+    record: {
+      id,
+      name: name.trim(),
+      keyPrefix,
+      scopes,
+      createdAt,
+      expiresAt,
+      lastUsedAt: null,
+      isActive: true
+    }
+  };
+}
+
+export function validateApiKey(rawKey: string, requiredScope?: string) {
+  if (!rawKey || typeof rawKey !== 'string' || !rawKey.startsWith('plk_')) return null;
+  const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex');
+  const now = new Date().toISOString();
+  
+  const keyRow = db.prepare(`
+    SELECT * FROM api_keys WHERE keyHash = ? AND isActive = 1
+  `).get(keyHash) as any;
+  
+  if (!keyRow) return null;
+
+  // Constant-time comparison in runtime memory for defense-in-depth against timing side-channels
+  try {
+    const isMatch = crypto.timingSafeEqual(
+      Buffer.from(keyHash, 'hex'),
+      Buffer.from(keyRow.keyHash, 'hex')
+    );
+    if (!isMatch) return null;
+  } catch {
+    return null;
+  }
+  
+  if (keyRow.expiresAt && keyRow.expiresAt <= now) {
+    return { error: 'EXPIRED' };
+  }
+  
+  let scopes: string[] = [];
+  try {
+    scopes = JSON.parse(keyRow.scopes);
+  } catch {
+    scopes = [];
+  }
+  
+  // Strict scope enforcement: only the exact granular scope is authorized
+  if (requiredScope && !scopes.includes(requiredScope)) {
+    return { error: 'INSUFFICIENT_SCOPE', requiredScope, availableScopes: scopes };
+  }
+  
+  // Record usage timestamp safely
+  try {
+    db.prepare('UPDATE api_keys SET lastUsedAt = ? WHERE id = ?').run(now, keyRow.id);
+  } catch {}
+  
+  return {
+    id: keyRow.id,
+    name: keyRow.name,
+    scopes,
+    isValid: true
+  };
+}
+
+export function getApiKeys(): Omit<ApiKeyRecord, 'keyHash'>[] {
+  const rows = db.prepare('SELECT id, name, keyPrefix, scopes, createdAt, expiresAt, lastUsedAt, isActive FROM api_keys ORDER BY createdAt DESC').all();
+  return rows.map((r: any) => ({
+    ...r,
+    scopes: typeof r.scopes === 'string' ? JSON.parse(r.scopes) : r.scopes,
+    isActive: !!r.isActive
+  }));
+}
+
+export function revokeApiKey(id: string) {
+  db.prepare('UPDATE api_keys SET isActive = 0 WHERE id = ?').run(id);
+  return { success: true };
+}
+
+export function deleteApiKey(id: string) {
+  db.prepare('DELETE FROM api_keys WHERE id = ?').run(id);
+  return { success: true };
+}
+

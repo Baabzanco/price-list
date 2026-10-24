@@ -8,72 +8,379 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(cors());
-  app.use(express.json({ limit: '50mb' }));
+  // Configure CORS
+  const allowedOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()) 
+    : null;
+
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (!allowedOrigins) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      return callback(new Error('CORS request blocked by security policy'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Session-Token', 'X-Requested-With']
+  }));
+
+  // JSON Body Parser with safe limits
+  app.use(express.json({ limit: '10mb' }));
 
   // Initialize DB
   db.initDb();
 
-  // --- API Routes ---
+  // --- In-Memory Login Rate Limiter ---
+  const loginAttempts = new Map<string, { count: number; firstAttempt: number }>();
+  function checkLoginRateLimit(ip: string): boolean {
+    const now = Date.now();
+    const windowMs = 15 * 60 * 1000; // 15 minutes
+    const maxAttempts = 10;
+    const record = loginAttempts.get(ip);
+    if (!record) {
+      loginAttempts.set(ip, { count: 1, firstAttempt: now });
+      return true;
+    }
+    if (now - record.firstAttempt > windowMs) {
+      loginAttempts.set(ip, { count: 1, firstAttempt: now });
+      return true;
+    }
+    if (record.count >= maxAttempts) {
+      return false;
+    }
+    record.count += 1;
+    return true;
+  }
+  function clearLoginRateLimit(ip: string) {
+    loginAttempts.delete(ip);
+  }
+
+  // --- Authentication & Role Middlewares ---
+  function authRequired(req: any, res: any, next: any) {
+    const authHeader = req.headers.authorization || req.headers['x-session-token'];
+    let token = '';
+    if (typeof authHeader === 'string') {
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.substring(7).trim();
+      } else {
+        token = authHeader.trim();
+      }
+    }
+
+    if (!token) {
+      return res.status(401).json({ error: 'عدم احراز هویت. لطفاً ابتدا وارد سیستم شوید.' });
+    }
+
+    const user = db.getSessionUser(token);
+    if (!user) {
+      return res.status(401).json({ error: 'نشست کاربری نامعتبر یا منقضی شده است. لطفاً مجدداً وارد شوید.' });
+    }
+
+    req.user = user;
+    req.sessionToken = token;
+    next();
+  }
+
+  function roleRequired(allowedRoles: string[]) {
+    return (req: any, res: any, next: any) => {
+      if (!req.user || !allowedRoles.includes(req.user.role)) {
+        return res.status(403).json({ error: 'دسترسی غیرمجاز. سطح دسترسی شما برای این عملیات کافی نیست.' });
+      }
+      next();
+    };
+  }
+
+  function apiKeyRequired(requiredScope?: string) {
+    return (req: any, res: any, next: any) => {
+      // Rejects non-GET write methods on read-only endpoints
+      if (req.method !== 'GET' && req.method !== 'OPTIONS' && req.method !== 'HEAD') {
+        return res.status(405).json({
+          success: false,
+          error: {
+            code: 'METHOD_NOT_ALLOWED',
+            message: 'عملیات نامعتبر است. این رابط صرفاً فقط-خواندنی (Read-Only) است.'
+          }
+        });
+      }
+
+      const rawAuth = req.headers['x-api-key'] || req.headers.authorization;
+      let apiKey = '';
+      if (typeof rawAuth === 'string') {
+        if (rawAuth.startsWith('Bearer ')) {
+          apiKey = rawAuth.substring(7).trim();
+        } else {
+          apiKey = rawAuth.trim();
+        }
+      }
+
+      if (!apiKey) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'کلید دسترسی ارائه نشده است. لطفاً کلید معتبر را در هدر X-API-Key ارسال فرمایید.'
+          }
+        });
+      }
+
+      const result = db.validateApiKey(apiKey, requiredScope);
+      if (!result) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'INVALID_API_KEY',
+            message: 'کلید API نامعتبر است یا غیرفعال شده است.'
+          }
+        });
+      }
+
+      if (result.error === 'EXPIRED') {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'API_KEY_EXPIRED',
+            message: 'اعتبار کلید API منقضی شده است.'
+          }
+        });
+      }
+
+      if (result.error === 'INSUFFICIENT_SCOPE') {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'INSUFFICIENT_SCOPE',
+            message: `کلید API فاقد مجوز دسترسی لازم (${result.requiredScope}) است.`
+          }
+        });
+      }
+
+      req.apiKey = result;
+      next();
+    };
+  }
+
+  // --- API Router ---
   const api = express.Router();
 
+  // Public Health Check
   api.get('/health', (req, res) => {
-    res.json({ status: 'ok' });
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
-  // Categories
-  api.get('/categories', (req, res) => res.json(db.getCategories()));
-  api.post('/categories', (req, res) => res.json(db.addCategory(req.body.name, req.body.parentId, req.body.hasLamb, req.body.hasTwoTeeth)));
-  api.put('/categories/:id', (req, res) => {
-    db.updateCategory(req.params.id, req.body.name, req.body.parentId, req.body.hasLamb, req.body.hasTwoTeeth);
-    res.json({ success: true });
-  });
-  api.patch('/categories/:id/toggle', (req, res) => {
-    db.toggleCategoryActive(req.params.id);
-    res.json({ success: true });
+  // --- Public Read-Only Endpoints (Required by Public Price List) ---
+  api.get('/categories', (req, res) => {
+    try {
+      res.json(db.getCategories());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  // Products
-  api.get('/products', (req, res) => res.json(db.getProducts()));
-  api.get('/products/category/:categoryId', (req, res) => res.json(db.getProductsByCategory(req.params.categoryId)));
-  api.post('/products', (req, res) => res.json(db.addProduct(req.body.categoryId, req.body.name, req.body.hasLamb, req.body.hasTwoTeeth, req.body.fontSize)));
-  api.put('/products/prices', (req, res) => {
-    db.updateProductPrices(req.body.updates, req.body.userId);
-    res.json({ success: true });
+  api.get('/products', (req, res) => {
+    try {
+      res.json(db.getProducts());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  api.put('/products/reorder', (req, res) => {
-    db.reorderProducts(req.body.updates);
-    res.json({ success: true });
+  api.get('/products/category/:categoryId', (req, res) => {
+    try {
+      res.json(db.getProductsByCategory(req.params.categoryId));
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  api.put('/products/:id', (req, res) => {
-    db.updateProduct(req.params.id, req.body.name, req.body.categoryId, req.body.hasLamb, req.body.hasTwoTeeth, req.body.fontSize);
-    res.json({ success: true });
-  });
-  api.delete('/products/:id', (req, res) => {
-    db.removeProduct(req.params.id);
-    res.json({ success: true });
-  });
-  api.patch('/products/:id/toggle', (req, res) => {
-    db.toggleProductActive(req.params.id);
-    res.json({ success: true });
-  });
-  // History
-  api.get('/history', (req, res) => res.json(db.getPriceHistory()));
-
-  // Settings
-  api.get('/settings', (req, res) => res.json(db.getSettings()));
-  api.put('/settings', (req, res) => {
-    db.updateSettings(req.body);
-    res.json({ success: true });
+  api.get('/settings', (req, res) => {
+    try {
+      res.json(db.getSettings());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
   });
 
-  // Stats
-  api.get('/stats', (req, res) => res.json(db.getStats()));
+  // --- Authentication Routes ---
+  api.post('/auth/login', (req, res) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    if (!checkLoginRateLimit(ip)) {
+      return res.status(429).json({ error: 'تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً ۱۵ دقیقه دیگر تلاش کنید.' });
+    }
 
-  // Backup & Restore
-  api.get('/backup', (req, res) => {
+    try {
+      const { username, password } = req.body || {};
+      if (!username || !password) {
+        return res.status(400).json({ error: 'نام کاربری و رمز عبور الزامی است.' });
+      }
+
+      const user = db.validateUser(String(username).trim(), String(password));
+      if (user) {
+        clearLoginRateLimit(ip);
+        const token = db.createSession(user.id);
+        res.json({ success: true, token, user });
+      } else {
+        res.status(401).json({ error: 'نام کاربری یا رمز عبور اشتباه است.' });
+      }
+    } catch (e: any) {
+      res.status(500).json({ error: 'خطای سیستمی در فرآیند احراز هویت.' });
+    }
+  });
+
+  api.post('/auth/logout', authRequired, (req: any, res) => {
+    try {
+      if (req.sessionToken) {
+        db.deleteSession(req.sessionToken);
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.get('/auth/me', authRequired, (req: any, res) => {
+    res.json({ success: true, user: req.user });
+  });
+
+  // --- Protected Editor & Admin Routes ---
+  api.get('/history', authRequired, roleRequired(['admin', 'editor']), (req, res) => {
+    try {
+      res.json(db.getPriceHistory());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.get('/stats', authRequired, roleRequired(['admin', 'editor']), (req, res) => {
+    try {
+      res.json(db.getStats());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.put('/products/prices', authRequired, roleRequired(['admin', 'editor']), (req: any, res) => {
+    try {
+      if (!req.body || !Array.isArray(req.body.updates)) {
+        return res.status(400).json({ error: 'فرمت داده‌های تغییر قیمت نامعتبر است.' });
+      }
+      // Security Hardening: Derive audit identity strictly from authenticated user!
+      const auditIdentity = req.user.name ? `${req.user.name} (${req.user.username})` : req.user.username;
+      db.updateProductPrices(req.body.updates, auditIdentity);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || 'خطا در ثبت تغییرات قیمت.' });
+    }
+  });
+
+  api.put('/products/reorder', authRequired, roleRequired(['admin', 'editor']), (req, res) => {
+    try {
+      if (!req.body || !Array.isArray(req.body.updates)) {
+        return res.status(400).json({ error: 'فرمت داده‌های چیدمان نامعتبر است.' });
+      }
+      db.reorderProducts(req.body.updates);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || 'خطا در تغییر ترتیب محصولات.' });
+    }
+  });
+
+  api.patch('/products/:id/toggle', authRequired, roleRequired(['admin', 'editor']), (req, res) => {
+    try {
+      db.toggleProductActive(req.params.id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // --- Protected Admin-Only Routes ---
+  api.post('/categories', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      if (!req.body || !req.body.name) {
+        return res.status(400).json({ error: 'نام دسته‌بندی الزامی است.' });
+      }
+      const cat = db.addCategory(req.body.name, req.body.parentId, req.body.hasLamb, req.body.hasTwoTeeth);
+      res.json(cat);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  api.put('/categories/:id', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      if (!req.body || !req.body.name) {
+        return res.status(400).json({ error: 'نام دسته‌بندی الزامی است.' });
+      }
+      db.updateCategory(req.params.id, req.body.name, req.body.parentId, req.body.hasLamb, req.body.hasTwoTeeth);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  api.delete('/categories/:id', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      db.deleteCategory(req.params.id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  api.patch('/categories/:id/toggle', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      db.toggleCategoryActive(req.params.id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.post('/products', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      if (!req.body || !req.body.name || !req.body.categoryId) {
+        return res.status(400).json({ error: 'نام کالا و دسته‌بندی الزامی است.' });
+      }
+      const prod = db.addProduct(req.body.categoryId, req.body.name, req.body.hasLamb, req.body.hasTwoTeeth, req.body.fontSize);
+      res.json(prod);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  api.put('/products/:id', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      if (!req.body || !req.body.name || !req.body.categoryId) {
+        return res.status(400).json({ error: 'نام کالا و دسته‌بندی الزامی است.' });
+      }
+      db.updateProduct(req.params.id, req.body.name, req.body.categoryId, req.body.hasLamb, req.body.hasTwoTeeth, req.body.fontSize);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  api.delete('/products/:id', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      db.removeProduct(req.params.id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.put('/settings', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      db.updateSettings(req.body);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  // Backup & Restore (Protected Admin Only)
+  api.get('/backup', authRequired, roleRequired(['admin']), (req, res) => {
     try {
       const backup = db.getBackupData();
       res.json(backup);
@@ -82,17 +389,16 @@ async function startServer() {
     }
   });
 
-  api.post('/backup/restore', (req, res) => {
+  api.post('/backup/restore', authRequired, roleRequired(['admin']), (req, res) => {
     try {
       const result = db.restoreBackupData(req.body);
       res.json(result);
     } catch (e: any) {
-      res.status(400).json({ error: e.message || 'خطا در بارگذاری فایل پشتیبان' });
+      res.status(400).json({ error: e.message || 'خطا در بارگذاری فایل پشتیبان.' });
     }
   });
 
-  // Migration
-  api.post('/migrate', (req, res) => {
+  api.post('/migrate', authRequired, roleRequired(['admin']), (req, res) => {
     try {
       db.runMigration(req.body);
       res.json({ success: true });
@@ -101,21 +407,8 @@ async function startServer() {
     }
   });
 
-  // User & Auth API
-  api.post('/auth/login', (req, res) => {
-    try {
-      const user = db.validateUser(req.body.username, req.body.password);
-      if (user) {
-        res.json({ success: true, user });
-      } else {
-        res.status(401).json({ error: 'نام کاربری یا رمز عبور اشتباه است.' });
-      }
-    } catch (e: any) {
-      res.status(500).json({ error: e.message });
-    }
-  });
-
-  api.get('/users', (req, res) => {
+  // User Management (Protected Admin Only)
+  api.get('/users', authRequired, roleRequired(['admin']), (req, res) => {
     try {
       res.json(db.getUsers());
     } catch (e: any) {
@@ -123,33 +416,195 @@ async function startServer() {
     }
   });
 
-  api.post('/users', (req, res) => {
+  api.post('/users', authRequired, roleRequired(['admin']), (req, res) => {
     try {
-      const newUser = db.addUser(req.body.username, req.body.password, req.body.name, req.body.role);
+      const { username, password, name, role } = req.body || {};
+      if (!username || !password || !name) {
+        return res.status(400).json({ error: 'اطلاعات کاربر ناقص است.' });
+      }
+      const newUser = db.addUser(username.trim().toLowerCase(), password, name.trim(), role || 'editor');
       res.json(newUser);
     } catch (e: any) {
       res.status(400).json({ error: 'نام کاربری از قبل وجود دارد یا خطایی رخ داده است.' });
     }
   });
 
-  api.put('/users/:id', (req, res) => {
+  api.put('/users/:id', authRequired, roleRequired(['admin']), (req, res) => {
     try {
-      const updated = db.updateUser(req.params.id, req.body.username, req.body.password || null, req.body.name, req.body.role);
+      const { username, password, name, role } = req.body || {};
+      if (!username || !name) {
+        return res.status(400).json({ error: 'نام و نام کاربری الزامی است.' });
+      }
+      const updated = db.updateUser(req.params.id, username, password || null, name, role || 'editor');
       res.json(updated);
     } catch (e: any) {
-      res.status(400).json({ error: e.message || 'خطا در بروزرسانی کاربر' });
+      res.status(400).json({ error: e.message || 'خطا در بروزرسانی کاربر.' });
     }
   });
 
-  api.delete('/users/:id', (req, res) => {
+  api.delete('/users/:id', authRequired, roleRequired(['admin']), (req: any, res) => {
     try {
-      db.removeUser(req.params.id);
+      db.removeUser(req.params.id, req.user.id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || 'خطا در حذف کاربر.' });
+    }
+  });
+
+  // API Key Management (Protected Admin Only)
+  api.get('/api-keys', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      res.json(db.getApiKeys());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.post('/api-keys', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      const { name, scopes, expiresInDays } = req.body || {};
+      if (!name) {
+        return res.status(400).json({ error: 'عنوان کلید الزامی است.' });
+      }
+      const created = db.createApiKey(name, scopes, expiresInDays ? parseInt(expiresInDays, 10) : null);
+      res.json(created);
+    } catch (e: any) {
+      res.status(400).json({ error: e.message });
+    }
+  });
+
+  api.delete('/api-keys/:id', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      db.deleteApiKey(req.params.id);
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
+  api.patch('/api-keys/:id/revoke', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      db.revokeApiKey(req.params.id);
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  // --- Read-Only Internal Integration API (/api/internal/*) ---
+  const internalApi = express.Router();
+
+  // Reject write methods explicitly with 405
+  internalApi.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'OPTIONS' && req.method !== 'HEAD') {
+      return res.status(405).json({
+        success: false,
+        error: {
+          code: 'METHOD_NOT_ALLOWED',
+          message: 'این API فقط-خواندنی (Read-Only) است. متدهای POST, PUT, DELETE, PATCH مجاز نمی‌باشند.'
+        }
+      });
+    }
+    next();
+  });
+
+  // Internal Products
+  internalApi.get('/products', apiKeyRequired('read:products'), (req, res) => {
+    try {
+      const categoryId = req.query.categoryId as string | undefined;
+      const isActiveParam = req.query.isActive as string | undefined;
+      const limit = Math.min(Math.max(1, parseInt(req.query.limit as string, 10) || 100), 500);
+      const offset = Math.max(0, parseInt(req.query.offset as string, 10) || 0);
+
+      let products = categoryId ? db.getProductsByCategory(categoryId) : db.getProducts();
+      if (isActiveParam !== undefined) {
+        const wantActive = isActiveParam === 'true' || isActiveParam === '1';
+        products = products.filter(p => p.isActive === wantActive);
+      }
+
+      const total = products.length;
+      const paged = products.slice(offset, offset + limit);
+
+      res.json({
+        success: true,
+        total,
+        limit,
+        offset,
+        data: paged
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+    }
+  });
+
+  // Internal Categories
+  internalApi.get('/categories', apiKeyRequired('read:categories'), (req, res) => {
+    try {
+      const parentId = req.query.parentId !== undefined 
+        ? (req.query.parentId === 'null' ? null : String(req.query.parentId)) 
+        : undefined;
+      const isActiveParam = req.query.isActive as string | undefined;
+
+      let categories = db.getCategories();
+      if (parentId !== undefined) {
+        categories = categories.filter(c => c.parentId === parentId);
+      }
+      if (isActiveParam !== undefined) {
+        const wantActive = isActiveParam === 'true' || isActiveParam === '1';
+        categories = categories.filter(c => c.isActive === wantActive);
+      }
+
+      res.json({
+        success: true,
+        total: categories.length,
+        data: categories
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+    }
+  });
+
+  // Internal Live Price List
+  internalApi.get('/price-list', apiKeyRequired('read:prices'), (req, res) => {
+    try {
+      const categories = db.getCategories().filter(c => c.isActive);
+      const allProducts = db.getProducts().filter(p => p.isActive);
+      const settings = db.getSettings();
+
+      const structured = categories.map(cat => ({
+        id: cat.id,
+        name: cat.name,
+        hasLamb: cat.hasLamb,
+        hasTwoTeeth: cat.hasTwoTeeth,
+        products: allProducts
+          .filter(p => p.categoryId === cat.id)
+          .map(p => ({
+            id: p.id,
+            name: p.name,
+            priceLamb: p.priceLamb,
+            priceTwoTeeth: p.priceTwoTeeth,
+            hasLamb: p.hasLamb,
+            hasTwoTeeth: p.hasTwoTeeth
+          }))
+      }));
+
+      res.json({
+        success: true,
+        companyName: settings.companyName,
+        currency: settings.currency,
+        lastUpdated: settings.lastUpdated,
+        dateMode: settings.dateMode || 'today',
+        categories: structured
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+    }
+  });
+
+  // Mount internal router
+  api.use('/internal', internalApi);
+
+  // Mount main api router
   app.use('/api', api);
 
   // Vite middleware for development

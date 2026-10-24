@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useDB } from '../../lib/useDB';
 import { db, Category } from '../../lib/db';
-import { Save, CheckCircle2, Edit2, X, Eye, EyeOff, Plus } from 'lucide-react';
+import { Save, CheckCircle2, Edit2, X, Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export function Categories() {
@@ -59,6 +59,16 @@ export function Categories() {
       showToast('وضعیت نمایش دسته‌بندی تغییر کرد.');
     } catch (e) {
       showToast('خطا در تغییر وضعیت.', 'error');
+    }
+  };
+
+  const handleDeleteCategory = async (id: string, name: string) => {
+    if (!window.confirm(`آیا از حذف دسته‌بندی «${name}» اطمینان دارید؟`)) return;
+    try {
+      await db.deleteCategory(id);
+      showToast('دسته‌بندی با موفقیت حذف شد.');
+    } catch (e: any) {
+      showToast(e.message || 'خطا در حذف دسته‌بندی.', 'error');
     }
   };
 
@@ -250,6 +260,13 @@ export function Categories() {
                         title={category.isActive ? "مخفی کردن" : "نمایش دادن"}
                       >
                         {category.isActive ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteCategory(category.id, category.name)}
+                        className="p-1.5 bg-surface-100 text-rose-500 rounded-lg hover:bg-rose-50 hover:text-rose-600 transition-colors dark:bg-surface-800 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                        title="حذف دسته‌بندی"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   )}

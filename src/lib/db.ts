@@ -52,19 +52,79 @@ export interface Settings {
   dateMode?: 'today' | 'last_updated';
 }
 
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  role: string;
+  createdAt: string;
+}
+
+export interface ApiKeyItem {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  scopes: string[];
+  createdAt: string;
+  expiresAt: string | null;
+  lastUsedAt: string | null;
+  isActive: boolean;
+}
+
 class APIClient {
+  private token: string | null = null;
+
+  constructor() {
+    this.token = localStorage.getItem('price_list_token');
+  }
+
+  public setToken(token: string | null) {
+    this.token = token;
+    if (token) {
+      localStorage.setItem('price_list_token', token);
+    } else {
+      localStorage.removeItem('price_list_token');
+    }
+  }
+
+  public getToken(): string | null {
+    return this.token;
+  }
+
   private async request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options?.headers as Record<string, string>),
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
     const res = await fetch(`/api${endpoint}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
+      headers,
     });
+
     if (!res.ok) {
-      const error = await res.text();
-      throw new Error(error || 'API Error');
+      let errMsg = 'خطا در ارتباط با سرور';
+      try {
+        const errJson = await res.json();
+        errMsg = errJson.error?.message || errJson.error || errJson.message || errMsg;
+      } catch {
+        const text = await res.text();
+        if (text) errMsg = text;
+      }
+
+      if (res.status === 401 && !endpoint.includes('/auth/login')) {
+        this.setToken(null);
+        localStorage.removeItem('price_list_user');
+        window.dispatchEvent(new Event('auth-expired'));
+      }
+
+      throw new Error(errMsg);
     }
+
     return res.json();
   }
 
@@ -89,6 +149,10 @@ class APIClient {
       method: 'PUT',
       body: JSON.stringify({ name, parentId, hasLamb, hasTwoTeeth })
     });
+    this.notify();
+  }
+  async deleteCategory(id: string): Promise<void> {
+    await this.request<void>(`/categories/${id}`, { method: 'DELETE' });
     this.notify();
   }
   async toggleCategoryActive(id: string): Promise<void> {
@@ -126,7 +190,7 @@ class APIClient {
     await this.request<void>(`/products/${id}/toggle`, { method: 'PATCH' });
     this.notify();
   }
-  async updateProductPrices(updates: { id: string; priceLamb: number | null; priceTwoTeeth: number | null }[], userId: string): Promise<void> {
+  async updateProductPrices(updates: { id: string; priceLamb: number | null; priceTwoTeeth: number | null }[], userId?: string): Promise<void> {
     await this.request<void>('/products/prices', {
       method: 'PUT',
       body: JSON.stringify({ updates, userId })
@@ -187,11 +251,27 @@ class APIClient {
   }
 
   // Auth & Users
-  async login(username: string, passwordPlain: string): Promise<{ success: boolean; user: User }> {
-    return this.request<{ success: boolean; user: User }>('/auth/login', {
+  async login(username: string, passwordPlain: string): Promise<{ success: boolean; token: string; user: User }> {
+    const res = await this.request<{ success: boolean; token: string; user: User }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password: passwordPlain })
     });
+    if (res.token) {
+      this.setToken(res.token);
+    }
+    return res;
+  }
+
+  async logout(): Promise<void> {
+    try {
+      await this.request<void>('/auth/logout', { method: 'POST' });
+    } catch {}
+    this.setToken(null);
+    localStorage.removeItem('price_list_user');
+  }
+
+  async getMe(): Promise<{ success: boolean; user: User }> {
+    return this.request<{ success: boolean; user: User }>('/auth/me');
   }
 
   async getUsers(): Promise<User[]> {
@@ -215,14 +295,26 @@ class APIClient {
   async removeUser(id: string): Promise<void> {
     await this.request<void>(`/users/${id}`, { method: 'DELETE' });
   }
-}
 
-export interface User {
-  id: string;
-  username: string;
-  name: string;
-  role: string;
-  createdAt: string;
+  // API Key Management
+  async getApiKeys(): Promise<ApiKeyItem[]> {
+    return this.request<ApiKeyItem[]>('/api-keys');
+  }
+
+  async createApiKey(data: { name: string; scopes: string[]; expiresInDays?: number | null }): Promise<{ key: string; record: ApiKeyItem }> {
+    return this.request<{ key: string; record: ApiKeyItem }>('/api-keys', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async revokeApiKey(id: string): Promise<void> {
+    await this.request<void>(`/api-keys/${id}/revoke`, { method: 'PATCH' });
+  }
+
+  async deleteApiKey(id: string): Promise<void> {
+    await this.request<void>(`/api-keys/${id}`, { method: 'DELETE' });
+  }
 }
 
 export const db = new APIClient();

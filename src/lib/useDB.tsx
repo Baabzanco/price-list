@@ -17,7 +17,7 @@ interface DBState {
   user: User | null;
   refresh: () => Promise<void>;
   login: (username: string, passwordPlain: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const DBContext = createContext<DBState | null>(null);
@@ -25,7 +25,8 @@ const DBContext = createContext<DBState | null>(null);
 export function DBProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('price_list_user');
-    if (saved) {
+    const token = localStorage.getItem('price_list_token');
+    if (saved && token) {
       try {
         return JSON.parse(saved);
       } catch (e) {
@@ -43,9 +44,10 @@ export function DBProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await db.logout();
     setUser(null);
-    localStorage.removeItem('price_list_user');
+    window.dispatchEvent(new Event('db-updated'));
   };
 
   const [data, setData] = useState<Omit<DBState, 'refresh' | 'user' | 'login' | 'logout'>>({
@@ -76,27 +78,36 @@ export function DBProvider({ children }: { children: ReactNode }) {
 
   const loadData = useCallback(async () => {
     try {
-      // Check for legacy localStorage DB
-      const localData = localStorage.getItem('meat_price_list_db');
-      if (localData) {
-        try {
-          const parsed = JSON.parse(localData);
-          if (parsed.isSeeded) {
-            await db.migrateFromLocal(parsed);
-          }
-        } catch (e) {
-          console.error('Failed to migrate local data', e);
-        }
-        localStorage.removeItem('meat_price_list_db');
-      }
-
-      const [categories, products, history, settings, stats] = await Promise.all([
+      // 1. Fetch public datasets (always available)
+      const [categories, products, settings] = await Promise.all([
         db.getCategories(),
         db.getProducts(),
-        db.getPriceHistory(),
-        db.getSettings(),
-        db.getStats()
+        db.getSettings()
       ]);
+
+      let history: PriceHistory[] = [];
+      let stats = {
+        activeProducts: products.filter(p => p.isActive).length,
+        categoriesCount: categories.length,
+        changesToday: 0,
+        lastUpdated: settings.lastUpdated
+      };
+
+      // 2. Fetch authenticated datasets if logged in
+      if (db.getToken()) {
+        try {
+          const [fetchedHistory, fetchedStats] = await Promise.all([
+            db.getPriceHistory(),
+            db.getStats()
+          ]);
+          history = fetchedHistory;
+          stats = fetchedStats;
+        } catch (authErr) {
+          // Token might be invalid or expired
+          console.warn('Authenticated data fetch skipped:', authErr);
+        }
+      }
+
       setData({
         categories,
         products,
@@ -112,10 +123,38 @@ export function DBProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Validate session on start
+  useEffect(() => {
+    if (db.getToken() && user) {
+      db.getMe()
+        .then(res => {
+          if (res?.user) {
+            setUser(res.user);
+            localStorage.setItem('price_list_user', JSON.stringify(res.user));
+          }
+        })
+        .catch(() => {
+          db.setToken(null);
+          localStorage.removeItem('price_list_user');
+          setUser(null);
+        });
+    }
+  }, []);
+
   useEffect(() => {
     loadData();
     window.addEventListener('db-updated', loadData);
-    return () => window.removeEventListener('db-updated', loadData);
+    
+    const onAuthExpired = () => {
+      setUser(null);
+      loadData();
+    };
+    window.addEventListener('auth-expired', onAuthExpired);
+
+    return () => {
+      window.removeEventListener('db-updated', loadData);
+      window.removeEventListener('auth-expired', onAuthExpired);
+    };
   }, [loadData]);
 
   const refresh = async () => {

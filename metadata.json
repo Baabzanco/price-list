@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "پروتئین گل محمدی - پنل مدیریت قیمت",
+  "description": "سیستم مدیریت و انتشار لیست قیمت شرکت پروتئین گل محمدی",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

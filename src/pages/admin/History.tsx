@@ -81,7 +81,9 @@ export function History() {
                       <td className="px-6 py-4 text-surface-600 dark:text-surface-400">{category?.name || 'نامشخص'}</td>
                       <td className="px-6 py-4">
                         <span className="px-2.5 py-1 rounded-md bg-surface-100 dark:bg-surface-800 text-surface-700 dark:text-surface-300 text-xs font-medium">
-                          {change.priceType === 'lamb' ? 'بره' : 'دو دندان'}
+                          {(product && !product.hasLamb && !product.hasTwoTeeth)
+                            ? 'قیمت واحد' 
+                            : (change.priceType === 'lamb' ? 'بره' : 'دو دندان')}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-surface-500 dark:text-surface-500 line-through decoration-surface-300 dark:decoration-surface-600">

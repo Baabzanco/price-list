@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FileText, Settings, History, Edit3, Menu, X, Printer, ListTree, Users, LogOut, Lock } from 'lucide-react';
+import { LayoutDashboard, FileText, Settings, History, Edit3, Menu, X, Printer, ListTree, Users, LogOut, Lock, Plug } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useDB } from '../lib/useDB';
 import { ThemeToggle } from '../components/ThemeToggle';
@@ -11,8 +11,9 @@ const navItems = [
   { to: '/admin/products', icon: FileText, label: 'مدیریت اقلام' },
   { to: '/admin/categories', icon: ListTree, label: 'دسته‌بندی‌ها' },
   { to: '/admin/history', icon: History, label: 'تاریخچه تغییرات' },
-  { to: '/admin/settings', icon: Settings, label: 'تنظیمات سیستم' },
-  { to: '/admin/users', icon: Users, label: 'مدیریت کاربران' },
+  { to: '/admin/settings', icon: Settings, label: 'تنظیمات سیستم', adminOnly: true },
+  { to: '/admin/users', icon: Users, label: 'مدیریت کاربران', adminOnly: true },
+  { to: '/admin/integrations', icon: Plug, label: 'اتصال به سیستم‌های دیگر', adminOnly: true },
 ];
 
 export function AdminLayout() {
@@ -127,20 +128,22 @@ export function AdminLayout() {
           </div>
           
           <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) => cn(
-                  "flex items-center gap-3 px-4 py-3 rounded-xl transition-colors",
-                  isActive ? "bg-white/15 text-white font-medium" : "text-white/70 hover:bg-white/5 hover:text-white"
-                )}
-                onClick={() => setIsMobileOpen(false)}
-              >
-                <item.icon className="w-5 h-5" />
-                {item.label}
-              </NavLink>
-            ))}
+            {navItems
+              .filter((item) => !item.adminOnly || user?.role === 'admin')
+              .map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) => cn(
+                    "flex items-center gap-3 px-4 py-3 rounded-xl transition-colors",
+                    isActive ? "bg-white/15 text-white font-medium" : "text-white/70 hover:bg-white/5 hover:text-white"
+                  )}
+                  onClick={() => setIsMobileOpen(false)}
+                >
+                  <item.icon className="w-5 h-5" />
+                  {item.label}
+                </NavLink>
+              ))}
           </nav>
 
           <div className="p-4 border-t border-white/10 space-y-2 shrink-0">
