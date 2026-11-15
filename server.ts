@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import * as db from './server/database';
+import * as crmSync from './server/crmSync';
 
 async function startServer() {
   const app = express();
@@ -30,6 +31,7 @@ async function startServer() {
 
   // Initialize DB
   db.initDb();
+  crmSync.startCrmRetryScheduler();
 
   // --- In-Memory Login Rate Limiter ---
   const loginAttempts = new Map<string, { count: number; firstAttempt: number }>();
@@ -266,7 +268,15 @@ async function startServer() {
       }
       // Security Hardening: Derive audit identity strictly from authenticated user!
       const auditIdentity = req.user.name ? `${req.user.name} (${req.user.username})` : req.user.username;
-      db.updateProductPrices(req.body.updates, auditIdentity);
+      const { changedProducts } = db.updateProductPrices(req.body.updates, auditIdentity);
+
+      // Fire-and-forget asynchronous CRM sync queue (never blocks or fails local price saving)
+      if (changedProducts.length > 0) {
+        crmSync.enqueueAutoPriceSync(changedProducts, auditIdentity).catch(err => {
+          console.error('[CRM_SYNC] Failed to enqueue auto price sync:', err);
+        });
+      }
+
       res.json({ success: true });
     } catch (e: any) {
       res.status(400).json({ error: e.message || 'خطا در ثبت تغییرات قیمت.' });
@@ -342,10 +352,18 @@ async function startServer() {
       if (!req.body || !req.body.name || !req.body.categoryId) {
         return res.status(400).json({ error: 'نام کالا و دسته‌بندی الزامی است.' });
       }
-      const prod = db.addProduct(req.body.categoryId, req.body.name, req.body.hasLamb, req.body.hasTwoTeeth, req.body.fontSize);
+      const crmIndex = req.body.crmProductIndex !== undefined ? req.body.crmProductIndex : req.body.crm_product_index;
+      const prod = db.addProduct(
+        req.body.categoryId,
+        req.body.name,
+        req.body.hasLamb,
+        req.body.hasTwoTeeth,
+        req.body.fontSize,
+        crmIndex
+      );
       res.json(prod);
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      res.status(e.statusCode || 400).json({ error: e.message, code: e.code });
     }
   });
 
@@ -354,10 +372,19 @@ async function startServer() {
       if (!req.body || !req.body.name || !req.body.categoryId) {
         return res.status(400).json({ error: 'نام کالا و دسته‌بندی الزامی است.' });
       }
-      db.updateProduct(req.params.id, req.body.name, req.body.categoryId, req.body.hasLamb, req.body.hasTwoTeeth, req.body.fontSize);
+      const crmIndex = req.body.crmProductIndex !== undefined ? req.body.crmProductIndex : req.body.crm_product_index;
+      db.updateProduct(
+        req.params.id,
+        req.body.name,
+        req.body.categoryId,
+        req.body.hasLamb,
+        req.body.hasTwoTeeth,
+        req.body.fontSize,
+        crmIndex
+      );
       res.json({ success: true });
     } catch (e: any) {
-      res.status(400).json({ error: e.message });
+      res.status(e.statusCode || 400).json({ error: e.message, code: e.code });
     }
   });
 
@@ -488,6 +515,111 @@ async function startServer() {
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
+    }
+  });
+
+  // --- CRM Synchronization & Configuration (Protected Admin Only) ---
+  api.get('/crm/stats', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      res.json(db.getCrmSyncStats());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.get('/crm/settings', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      const settings = db.getCrmSettings();
+      res.json({
+        ...settings,
+        hasEnvAuthToken: Boolean(process.env.CRM_API_AUTH_TOKEN),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.put('/crm/settings', authRequired, roleRequired(['admin']), (req: any, res) => {
+    try {
+      const updated = db.updateCrmSettings(req.body || {});
+      const auditIdentity = req.user.name ? `${req.user.name} (${req.user.username})` : req.user.username;
+      console.log(`[CRM_SYNC] Settings updated by ${auditIdentity}: liveTransmissionEnabled=${updated.liveTransmissionEnabled}, priceUnitConfirmed=${updated.priceUnitConfirmed}, multiplier=${updated.priceMultiplier}`);
+      res.json({
+        ...updated,
+        hasEnvAuthToken: Boolean(process.env.CRM_API_AUTH_TOKEN),
+      });
+    } catch (e: any) {
+      res.status(400).json({ error: e.message || 'خطا در ذخیره تنظیمات CRM.' });
+    }
+  });
+
+  api.get('/crm/logs', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      const result = db.getCrmSyncLogs({
+        status: req.query.status as string | undefined,
+        productId: req.query.productId as string | undefined,
+        operationType: req.query.operationType as string | undefined,
+        from: req.query.from as string | undefined,
+        to: req.query.to as string | undefined,
+        limit: req.query.limit ? parseInt(req.query.limit as string, 10) : 100,
+        offset: req.query.offset ? parseInt(req.query.offset as string, 10) : 0,
+      });
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.get('/crm/bulk-preview', authRequired, roleRequired(['admin']), (req, res) => {
+    try {
+      res.json(crmSync.getManualBulkPreview());
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+  api.post('/crm/sync-all', authRequired, roleRequired(['admin']), async (req: any, res) => {
+    try {
+      const auditIdentity = req.user.name ? `${req.user.name} (${req.user.username})` : req.user.username;
+      const summary = await crmSync.triggerManualBulkSync(auditIdentity);
+      res.json(summary);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'خطا در اجرای همگام‌سازی گروهی.' });
+    }
+  });
+
+  api.post('/crm/retry-failed', authRequired, roleRequired(['admin']), async (req: any, res) => {
+    try {
+      const auditIdentity = req.user.name ? `${req.user.name} (${req.user.username})` : req.user.username;
+      const logIds = Array.isArray(req.body?.logIds) ? req.body.logIds : undefined;
+      const includePending = Boolean(req.body?.includePending);
+      const summary = await crmSync.retryCrmLogs({
+        logIds,
+        triggeredBy: auditIdentity,
+        isAutomatic: false,
+        includePending,
+      });
+      res.json(summary);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'خطا در ارسال مجدد موارد ناموفق.' });
+    }
+  });
+
+  api.post('/crm/logs/:id/retry', authRequired, roleRequired(['admin']), async (req: any, res) => {
+    try {
+      const existing = db.getCrmSyncLogById(req.params.id);
+      if (!existing) {
+        return res.status(404).json({ error: 'رکورد همگام‌سازی یافت نشد.' });
+      }
+      const auditIdentity = req.user.name ? `${req.user.name} (${req.user.username})` : req.user.username;
+      const summary = await crmSync.retryCrmLogs({
+        logIds: [req.params.id],
+        triggeredBy: auditIdentity,
+        isAutomatic: false,
+      });
+      res.json(summary);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'خطا در ارسال مجدد.' });
     }
   });
 

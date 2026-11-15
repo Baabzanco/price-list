@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FileText, Settings, History, Edit3, Menu, X, Printer, ListTree, Users, LogOut, Lock, Plug } from 'lucide-react';
+import { LayoutDashboard, FileText, Settings, History, Edit3, Menu, X, Printer, ListTree, Users, LogOut, Lock, Plug, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useDB } from '../lib/useDB';
 import { ThemeToggle } from '../components/ThemeToggle';
@@ -14,6 +14,7 @@ const navItems = [
   { to: '/admin/settings', icon: Settings, label: 'تنظیمات سیستم', adminOnly: true },
   { to: '/admin/users', icon: Users, label: 'مدیریت کاربران', adminOnly: true },
   { to: '/admin/integrations', icon: Plug, label: 'اتصال به سیستم‌های دیگر', adminOnly: true },
+  { to: '/admin/crm-sync', icon: RefreshCw, label: 'همگامسازی با CRM', adminOnly: true },
 ];
 
 export function AdminLayout() {

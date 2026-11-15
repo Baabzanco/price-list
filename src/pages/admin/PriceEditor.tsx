@@ -66,9 +66,19 @@ export function PriceEditor() {
       }
       
       await db.updateSettings({ lastUpdated: new Date().toISOString() });
+
+      const crmConnectedChanged = changedProducts.filter(id => {
+        const p = products.find(prod => prod.id === id);
+        return p?.crmProductIndex != null;
+      }).length;
       
-      setToast({ type: 'success', message: 'قیمت‌ها با موفقیت ذخیره شدند.' });
-      setTimeout(() => setToast(null), 3000);
+      setToast({
+        type: 'success',
+        message: crmConnectedChanged > 0
+          ? `قیمت‌ها با موفقیت ذخیره شدند (${crmConnectedChanged} قلم متصل به CRM در صف همگام‌سازی قرار گرفت).`
+          : 'قیمت‌ها با موفقیت ذخیره شدند.'
+      });
+      setTimeout(() => setToast(null), 4000);
     } catch (error) {
       console.error(error);
       setToast({ type: 'error', message: 'خطا در ذخیره قیمت‌ها.' });

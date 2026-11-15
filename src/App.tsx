@@ -9,6 +9,7 @@ import { History } from './pages/admin/History';
 import { Settings } from './pages/admin/Settings';
 import { UsersManagement } from './pages/admin/UsersManagement';
 import { IntegrationsManagement } from './pages/admin/IntegrationsManagement';
+import { CrmSync } from './pages/admin/CrmSync';
 import { PriceList } from './pages/public/PriceList';
 import { DBProvider } from './lib/useDB';
 
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="settings" element={<Settings />} />
             <Route path="users" element={<UsersManagement />} />
             <Route path="integrations" element={<IntegrationsManagement />} />
+            <Route path="crm-sync" element={<CrmSync />} />
           </Route>
         </Routes>
       </Router>

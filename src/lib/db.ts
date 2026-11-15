@@ -22,6 +22,105 @@ export interface Product {
   hasLamb: boolean;
   hasTwoTeeth: boolean;
   fontSize?: number | null;
+  crmProductIndex?: number | null;
+}
+
+export type CrmSyncStatus = 'pending' | 'sending' | 'success' | 'failed' | 'needs_review';
+export type CrmOperationType = 'auto' | 'manual' | 'retry';
+
+export interface CrmSettings {
+  apiUrl: string;
+  liveTransmissionEnabled: boolean;
+  priceUnitConfirmed: boolean;
+  priceUnitLabel: string;
+  priceMultiplier: number;
+  priceSource: 'lamb_then_two_teeth' | 'two_teeth_then_lamb';
+  authType: 'none' | 'bearer' | 'api_key_header';
+  authHeaderName: string;
+  timeoutMs: number;
+  maxRetries: number;
+  retryDelayMs: number;
+  batchSize: number;
+  rateLimitDelayMs: number;
+  debounceMs: number;
+  invalidIndexPolicy: 'needs_review' | 'fail_batch';
+  hasEnvAuthToken?: boolean;
+}
+
+export interface CrmSyncLog {
+  id: string;
+  batchId: string | null;
+  productId: string | null;
+  productName: string;
+  crmProductIndex: number;
+  rawPrice: number | null;
+  sentPrice: number;
+  currencyUnit: string | null;
+  operationType: CrmOperationType;
+  status: CrmSyncStatus;
+  apiResponse: string | null;
+  errorMessage: string | null;
+  retryCount: number;
+  nextRetryAt: string | null;
+  batchSize: number;
+  updatedCount: number | null;
+  triggeredBy: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  updatedAt: string;
+}
+
+export interface CrmSyncStats {
+  totalProducts: number;
+  withCrmIndex: number;
+  withoutCrmIndex: number;
+  syncedProductsCount: number;
+  unsyncedProductsCount: number;
+  failedProductsCount: number;
+  needsReviewProductsCount: number;
+  pendingProductsCount: number;
+  lastSyncAt: string | null;
+  liveTransmissionEnabled: boolean;
+  priceUnitConfirmed: boolean;
+}
+
+export interface CrmBulkPreview {
+  totalProducts: number;
+  withCrmIndex: number;
+  withoutCrmIndex: number;
+  eligibleCount: number;
+  missingPriceWithIndexCount: number;
+  liveTransmissionEnabled: boolean;
+  priceUnitConfirmed: boolean;
+  priceUnitLabel: string;
+  priceMultiplier: number;
+  batchSize: number;
+  samplePayload: Record<string, number>;
+  items: Array<{
+    productId: string;
+    productName: string;
+    crmProductIndex: number;
+    rawPrice: number;
+    sentPrice: number;
+    isActive: boolean;
+  }>;
+}
+
+export interface CrmSyncBatchSummary {
+  transmitted: boolean;
+  reason?: string;
+  total: number;
+  succeeded: number;
+  failed: number;
+  needsReview: number;
+  pending: number;
+  batchResults: Array<{
+    batchId: string;
+    sentCount: number;
+    updatedCount: number | null;
+    status: CrmSyncStatus;
+    errorMessage: string | null;
+  }>;
 }
 
 export interface PriceHistory {
@@ -167,18 +266,18 @@ class APIClient {
   async getProductsByCategory(categoryId: string): Promise<Product[]> {
     return this.request<Product[]>(`/products/category/${categoryId}`);
   }
-  async addProduct(categoryId: string, name: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true, fontSize?: number | null): Promise<Product> {
+  async addProduct(categoryId: string, name: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true, fontSize?: number | null, crmProductIndex?: number | null): Promise<Product> {
     const res = await this.request<Product>('/products', {
       method: 'POST',
-      body: JSON.stringify({ categoryId, name, hasLamb, hasTwoTeeth, fontSize: fontSize ?? null })
+      body: JSON.stringify({ categoryId, name, hasLamb, hasTwoTeeth, fontSize: fontSize ?? null, crmProductIndex: crmProductIndex ?? null })
     });
     this.notify();
     return res;
   }
-  async updateProduct(id: string, name: string, categoryId: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true, fontSize?: number | null): Promise<void> {
+  async updateProduct(id: string, name: string, categoryId: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true, fontSize?: number | null, crmProductIndex?: number | null): Promise<void> {
     await this.request<void>(`/products/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, categoryId, hasLamb, hasTwoTeeth, fontSize: fontSize ?? null })
+      body: JSON.stringify({ name, categoryId, hasLamb, hasTwoTeeth, fontSize: fontSize ?? null, crmProductIndex: crmProductIndex ?? null })
     });
     this.notify();
   }
@@ -314,6 +413,62 @@ class APIClient {
 
   async deleteApiKey(id: string): Promise<void> {
     await this.request<void>(`/api-keys/${id}`, { method: 'DELETE' });
+  }
+
+  // CRM Synchronization
+  async getCrmStats(): Promise<CrmSyncStats> {
+    return this.request<CrmSyncStats>('/crm/stats');
+  }
+
+  async getCrmSettings(): Promise<CrmSettings> {
+    return this.request<CrmSettings>('/crm/settings');
+  }
+
+  async updateCrmSettings(data: Partial<CrmSettings>): Promise<CrmSettings> {
+    return this.request<CrmSettings>('/crm/settings', {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+  }
+
+  async getCrmLogs(filters?: {
+    status?: string;
+    productId?: string;
+    operationType?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ total: number; items: CrmSyncLog[] }> {
+    const params = new URLSearchParams();
+    if (filters?.status && filters.status !== 'all') params.set('status', filters.status);
+    if (filters?.productId && filters.productId !== 'all') params.set('productId', filters.productId);
+    if (filters?.operationType && filters.operationType !== 'all') params.set('operationType', filters.operationType);
+    if (filters?.from) params.set('from', filters.from);
+    if (filters?.to) params.set('to', filters.to);
+    if (filters?.limit) params.set('limit', String(filters.limit));
+    if (filters?.offset) params.set('offset', String(filters.offset));
+    const qs = params.toString();
+    return this.request<{ total: number; items: CrmSyncLog[] }>(`/crm/logs${qs ? `?${qs}` : ''}`);
+  }
+
+  async getCrmBulkPreview(): Promise<CrmBulkPreview> {
+    return this.request<CrmBulkPreview>('/crm/bulk-preview');
+  }
+
+  async syncAllToCrm(): Promise<CrmSyncBatchSummary> {
+    return this.request<CrmSyncBatchSummary>('/crm/sync-all', { method: 'POST' });
+  }
+
+  async retryFailedCrmLogs(options?: { logIds?: string[]; includePending?: boolean }): Promise<CrmSyncBatchSummary> {
+    return this.request<CrmSyncBatchSummary>('/crm/retry-failed', {
+      method: 'POST',
+      body: JSON.stringify(options || {})
+    });
+  }
+
+  async retryCrmLogById(id: string): Promise<CrmSyncBatchSummary> {
+    return this.request<CrmSyncBatchSummary>(`/crm/logs/${id}/retry`, { method: 'POST' });
   }
 }
 

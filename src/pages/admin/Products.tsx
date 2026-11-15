@@ -1,20 +1,37 @@
 import React, { useState, useMemo } from 'react';
 import { useDB } from '../../lib/useDB';
 import { db, Category } from '../../lib/db';
-import { CheckCircle2, Eye, EyeOff, Plus, Trash2, Search, Edit2, Save, X, GripVertical, Type, Minus, RotateCcw } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Eye, EyeOff, Plus, Trash2, Search, Edit2, Save, X, GripVertical, Type, Minus, RotateCcw, Link2, Unlink } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { cn } from '../../lib/utils';
 
+function parseCrmIndexInput(raw: string): { valid: boolean; value: number | null; error?: string } {
+  const normalized = raw
+    .trim()
+    .replace(/[۰-۹]/g, d => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+  if (normalized === '') {
+    return { valid: true, value: null };
+  }
+  if (!/^\d+$/.test(normalized)) {
+    return { valid: false, value: null, error: 'شاخص محصول در CRM باید یک عدد صحیح مثبت باشد.' };
+  }
+  const num = Number(normalized);
+  if (!Number.isSafeInteger(num) || num <= 0) {
+    return { valid: false, value: null, error: 'شاخص محصول در CRM باید عدد صحیح بزرگ‌تر از صفر باشد.' };
+  }
+  return { valid: true, value: num };
+}
 
-function SortableRow({ product, category, isEditing, editForm, setEditForm, saveEdit, startEdit, toggleVisibility, removeProduct, setEditingId, orderedCategories, isSearchActive }: any) {
+function SortableRow({ product, category, isEditing, editForm, setEditForm, editError, saveEdit, startEdit, toggleVisibility, removeProduct, setEditingId, orderedCategories, isFilterActive }: any) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: product.id });
   const style = { transform: CSS.Transform.toString(transform), transition, zIndex: isDragging ? 1 : 0, position: isDragging ? 'relative' as const : undefined };
   return (
     <tr ref={setNodeRef} style={style} className={`hover:bg-surface-50/50 dark:hover:bg-surface-800/50 transition-colors ${isDragging ? 'bg-surface-100 dark:bg-surface-800 shadow-lg' : ''} ${isEditing ? 'bg-primary/5 dark:bg-primary/10' : ''}`}>
       <td className="pl-2 pr-6 py-4 w-10">
-        {!isEditing && !isSearchActive && (
+        {!isEditing && !isFilterActive && (
           <div {...attributes} {...listeners} className="cursor-grab text-surface-400 hover:text-surface-600 dark:hover:text-surface-300">
             <GripVertical className="w-4 h-4" />
           </div>
@@ -197,6 +214,49 @@ function SortableRow({ product, category, isEditing, editForm, setEditForm, save
         )}
       </td>
       <td className="px-6 py-4">
+        {isEditing ? (
+          <div className="space-y-1.5 min-w-[150px]">
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={editForm.crmProductIndex}
+                onChange={e => setEditForm({ ...editForm, crmProductIndex: e.target.value })}
+                className={cn(
+                  "w-full px-3 py-1.5 rounded-lg border bg-white dark:bg-surface-800 dark:text-white focus:outline-none focus:ring-2 font-mono text-sm text-left",
+                  editError ? "border-rose-400 focus:ring-rose-200" : "border-surface-200 dark:border-surface-700 focus:ring-primary/20"
+                )}
+                placeholder="اختیاری (مثلاً 46)"
+                dir="ltr"
+              />
+              {editForm.crmProductIndex !== '' && (
+                <button
+                  type="button"
+                  onClick={() => setEditForm({ ...editForm, crmProductIndex: '' })}
+                  className="p-1.5 text-surface-400 hover:text-rose-500 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800"
+                  title="حذف شاخص CRM"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            {editError && (
+              <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400 leading-snug">{editError}</p>
+            )}
+          </div>
+        ) : product.crmProductIndex ? (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/50" dir="ltr">
+            <Link2 className="w-3.5 h-3.5" />
+            #{product.crmProductIndex}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-surface-100 text-surface-500 dark:bg-surface-800 dark:text-surface-400">
+            <Unlink className="w-3 h-3" />
+            ثبت نشده
+          </span>
+        )}
+      </td>
+      <td className="px-6 py-4">
         <div className="flex items-center justify-end gap-2">
           {isEditing ? (
             <>
@@ -226,7 +286,10 @@ export function Products() {
   const [newHasLamb, setNewHasLamb] = useState(true);
   const [newHasTwoTeeth, setNewHasTwoTeeth] = useState(true);
   const [newFontSize, setNewFontSize] = useState<number | null>(null);
+  const [newCrmIndex, setNewCrmIndex] = useState('');
+  const [addFormError, setAddFormError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [crmFilter, setCrmFilter] = useState<'all' | 'connected' | 'unconnected'>('all');
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{ 
@@ -234,26 +297,59 @@ export function Products() {
     categoryId: string, 
     hasLamb: boolean, 
     hasTwoTeeth: boolean,
-    fontSize: number | null 
-  }>({ name: '', categoryId: '', hasLamb: true, hasTwoTeeth: true, fontSize: null });
+    fontSize: number | null,
+    crmProductIndex: string
+  }>({ name: '', categoryId: '', hasLamb: true, hasTwoTeeth: true, fontSize: null, crmProductIndex: '' });
+  const [editError, setEditError] = useState<string | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 5000);
+  };
+
+  const validateCrmIndexUniqueness = (rawVal: string, excludeProductId?: string): { ok: boolean; value: number | null; error?: string } => {
+    const parsed = parseCrmIndexInput(rawVal);
+    if (!parsed.valid) {
+      return { ok: false, value: null, error: parsed.error };
+    }
+    if (parsed.value !== null) {
+      const conflict = products.find(p => p.crmProductIndex === parsed.value && p.id !== excludeProductId);
+      if (conflict) {
+        return {
+          ok: false,
+          value: null,
+          error: `این شاخص CRM قبلاً برای محصول ${conflict.name} ثبت شده است. لطفاً شاخص دیگری وارد کنید.`
+        };
+      }
+    }
+    return { ok: true, value: parsed.value };
   };
 
   const handleAddProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAddFormError(null);
     if (!newProductName.trim() || !selectedCategory) return;
+
+    const crmCheck = validateCrmIndexUniqueness(newCrmIndex);
+    if (!crmCheck.ok) {
+      setAddFormError(crmCheck.error || 'شاخص CRM نامعتبر است.');
+      showToast(crmCheck.error || 'شاخص CRM نامعتبر است.', 'error');
+      return;
+    }
+
     try {
-      await db.addProduct(selectedCategory, newProductName.trim(), newHasLamb, newHasTwoTeeth, newFontSize);
+      await db.addProduct(selectedCategory, newProductName.trim(), newHasLamb, newHasTwoTeeth, newFontSize, crmCheck.value);
       setNewProductName('');
       setNewHasLamb(true);
       setNewHasTwoTeeth(true);
       setNewFontSize(null);
+      setNewCrmIndex('');
+      setAddFormError(null);
       showToast('محصول جدید با موفقیت اضافه شد.');
-    } catch (error) {
-      showToast('خطا در افزودن محصول.', 'error');
+    } catch (error: any) {
+      const msg = error?.message || 'خطا در افزودن محصول.';
+      setAddFormError(msg);
+      showToast(msg, 'error');
     }
   };
 
@@ -279,23 +375,37 @@ export function Products() {
 
   const startEdit = (p: any) => {
     setEditingId(p.id);
+    setEditError(null);
     setEditForm({ 
       name: p.name, 
       categoryId: p.categoryId, 
       hasLamb: p.hasLamb ?? true, 
       hasTwoTeeth: p.hasTwoTeeth ?? true,
-      fontSize: p.fontSize ?? null 
+      fontSize: p.fontSize ?? null,
+      crmProductIndex: p.crmProductIndex != null ? String(p.crmProductIndex) : ''
     });
   };
 
   const saveEdit = async (id: string) => {
+    setEditError(null);
     if (!editForm.name.trim() || !editForm.categoryId) return;
+
+    const crmCheck = validateCrmIndexUniqueness(editForm.crmProductIndex, id);
+    if (!crmCheck.ok) {
+      setEditError(crmCheck.error || 'شاخص CRM نامعتبر است.');
+      showToast(crmCheck.error || 'شاخص CRM نامعتبر است.', 'error');
+      return;
+    }
+
     try {
-      await db.updateProduct(id, editForm.name.trim(), editForm.categoryId, editForm.hasLamb, editForm.hasTwoTeeth, editForm.fontSize);
+      await db.updateProduct(id, editForm.name.trim(), editForm.categoryId, editForm.hasLamb, editForm.hasTwoTeeth, editForm.fontSize, crmCheck.value);
       showToast('محصول با موفقیت ویرایش شد.');
+      setEditError(null);
       setEditingId(null);
-    } catch (error) {
-      showToast('خطا در ویرایش محصول.', 'error');
+    } catch (error: any) {
+      const msg = error?.message || 'خطا در ویرایش محصول.';
+      setEditError(msg);
+      showToast(msg, 'error');
     }
   };
 
@@ -327,107 +437,156 @@ export function Products() {
   };
 
   const filteredProducts = useMemo(() => {
-    if (!searchQuery.trim()) return products;
-    return products.filter(p => 
-      p.name.includes(searchQuery) || 
-      categories.find(c => c.id === p.categoryId)?.name.includes(searchQuery)
-    );
-  }, [products, searchQuery, categories]);
+    return products.filter(p => {
+      if (crmFilter === 'connected' && !p.crmProductIndex) return false;
+      if (crmFilter === 'unconnected' && p.crmProductIndex) return false;
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.trim();
+      return (
+        p.name.includes(q) ||
+        (p.crmProductIndex != null && String(p.crmProductIndex).includes(q)) ||
+        categories.find(c => c.id === p.categoryId)?.name.includes(q)
+      );
+    });
+  }, [products, searchQuery, crmFilter, categories]);
+
+  const isFilterActive = searchQuery.trim().length > 0 || crmFilter !== 'all';
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-surface-900 dark:text-white">مدیریت اقلام</h2>
-          <p className="text-surface-600 dark:text-surface-400 mt-1">افزودن، ویرایش و حذف اقلام.</p>
+          <p className="text-surface-600 dark:text-surface-400 mt-1">افزودن، ویرایش، حذف اقلام و تعیین شاخص محصول در CRM.</p>
         </div>
-        <div className="relative w-full sm:w-64">
-          <input
-            type="text"
-            placeholder="جستجو در اقلام..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 rounded-xl border border-surface-200 bg-white dark:bg-surface-800 dark:border-surface-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20"
-          />
-          <Search className="w-5 h-5 text-surface-400 absolute left-3 top-2.5" />
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
+          <select
+            value={crmFilter}
+            onChange={(e) => setCrmFilter(e.target.value as any)}
+            className="px-3 py-2 rounded-xl border border-surface-200 bg-white dark:bg-surface-800 dark:border-surface-700 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="all">همه اقلام ({products.length})</option>
+            <option value="connected">متصل به CRM ({products.filter(p => p.crmProductIndex != null).length})</option>
+            <option value="unconnected">بدون شاخص CRM ({products.filter(p => p.crmProductIndex == null).length})</option>
+          </select>
+          <div className="relative w-full sm:w-64">
+            <input
+              type="text"
+              placeholder="جستجو در نام یا شاخص CRM..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 rounded-xl border border-surface-200 bg-white dark:bg-surface-800 dark:border-surface-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            <Search className="w-5 h-5 text-surface-400 absolute left-3 top-2.5" />
+          </div>
         </div>
       </div>
 
       {toast && (
         <div className={cn(
           "p-4 rounded-xl flex items-center gap-3 border shadow-sm transition-all",
-          toast.type === 'success' ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-rose-50 border-rose-200 text-rose-800"
+          toast.type === 'success' ? "bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/30 dark:border-emerald-900 dark:text-emerald-300" : "bg-rose-50 border-rose-200 text-rose-800 dark:bg-rose-950/30 dark:border-rose-900 dark:text-rose-300"
         )}>
-          <CheckCircle2 className="w-5 h-5" />
+          {toast.type === 'success' ? <CheckCircle2 className="w-5 h-5 shrink-0" /> : <AlertCircle className="w-5 h-5 shrink-0" />}
           <span className="font-medium">{toast.message}</span>
         </div>
       )}
 
       {/* Add New Product */}
-      <form onSubmit={handleAddProduct} className="bg-white dark:bg-surface-900 rounded-2xl border border-surface-200 dark:border-surface-800 p-6 shadow-sm flex flex-col lg:flex-row gap-4 items-end">
-        <div className="flex-1 w-full space-y-1.5">
-          <label className="text-sm font-medium text-surface-700 dark:text-surface-300">نام قلم جدید</label>
-          <input
-            type="text"
-            value={newProductName}
-            onChange={e => setNewProductName(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-xl border border-surface-200 bg-surface-50 dark:bg-surface-800 dark:border-surface-700 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
-            placeholder="مثال: ران ممتاز..."
-            required
-          />
-        </div>
-        <div className="w-full lg:w-48 space-y-1.5">
-          <label className="text-sm font-medium text-surface-700 dark:text-surface-300">دسته‌بندی</label>
-          <select
-            value={selectedCategory}
-            onChange={e => setSelectedCategory(e.target.value)}
-            className="w-full px-4 py-2.5 rounded-xl border border-surface-200 bg-surface-50 dark:bg-surface-800 dark:border-surface-700 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
-            required
+      <form onSubmit={handleAddProduct} className="bg-white dark:bg-surface-900 rounded-2xl border border-surface-200 dark:border-surface-800 p-6 shadow-sm space-y-4">
+        <div className="flex flex-col lg:flex-row gap-4 items-end">
+          <div className="flex-1 w-full space-y-1.5">
+            <label className="text-sm font-medium text-surface-700 dark:text-surface-300">نام قلم جدید</label>
+            <input
+              type="text"
+              value={newProductName}
+              onChange={e => setNewProductName(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-xl border border-surface-200 bg-surface-50 dark:bg-surface-800 dark:border-surface-700 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+              placeholder="مثال: ران ممتاز..."
+              required
+            />
+          </div>
+          <div className="w-full lg:w-44 space-y-1.5">
+            <label className="text-sm font-medium text-surface-700 dark:text-surface-300">دسته‌بندی</label>
+            <select
+              value={selectedCategory}
+              onChange={e => setSelectedCategory(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-xl border border-surface-200 bg-surface-50 dark:bg-surface-800 dark:border-surface-700 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+              required
+            >
+              <option value="">انتخاب دسته</option>
+              {orderedCategories.map(c => (
+                <option key={c.id} value={c.id}>{'\u00A0\u00A0'.repeat(c.depth)}{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="w-full lg:w-44 space-y-1.5">
+            <label className="text-sm font-medium text-surface-700 dark:text-surface-300 flex items-center gap-1">
+              <Link2 className="w-3.5 h-3.5 text-primary" />
+              شاخص محصول در CRM
+            </label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={newCrmIndex}
+              onChange={e => {
+                setNewCrmIndex(e.target.value);
+                if (addFormError) setAddFormError(null);
+              }}
+              className={cn(
+                "w-full px-3.5 py-2.5 rounded-xl border bg-surface-50 dark:bg-surface-800 dark:text-white focus:bg-white focus:outline-none focus:ring-2 font-mono text-sm text-left",
+                addFormError ? "border-rose-400 focus:ring-rose-200" : "border-surface-200 dark:border-surface-700 focus:ring-primary/20"
+              )}
+              placeholder="اختیاری (مثلاً 46)"
+              dir="ltr"
+            />
+          </div>
+          <div className="w-full lg:w-36 space-y-1.5">
+            <label className="text-sm font-medium text-surface-700 dark:text-surface-300 flex items-center gap-1">
+              <Type className="w-3.5 h-3.5 text-primary" />
+              سایز فونت
+            </label>
+            <select
+              value={newFontSize === null ? '' : newFontSize}
+              onChange={e => setNewFontSize(e.target.value === '' ? null : Number(e.target.value))}
+              className="w-full px-3 py-2.5 rounded-xl border border-surface-200 bg-surface-50 dark:bg-surface-800 dark:border-surface-700 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
+            >
+              <option value="">خودکار</option>
+              <option value="11">کوچک (11px)</option>
+              <option value="12">12px</option>
+              <option value="13">استاندارد (13px)</option>
+              <option value="14">14px</option>
+              <option value="15">بزرگ (15px)</option>
+              <option value="16">16px</option>
+              <option value="18">خیلی بزرگ (18px)</option>
+              <option value="20">20px</option>
+            </select>
+          </div>
+          <div className="flex gap-4 items-center h-[46px] px-2 w-full lg:w-auto">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={newHasLamb} onChange={e => setNewHasLamb(e.target.checked)} className="w-4 h-4 rounded text-primary focus:ring-primary/20 bg-white border-surface-300 dark:border-surface-600 dark:bg-surface-800" />
+              <span className="text-sm font-medium text-surface-700 dark:text-surface-300 whitespace-nowrap">قیمت بره</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={newHasTwoTeeth} onChange={e => setNewHasTwoTeeth(e.target.checked)} className="w-4 h-4 rounded text-primary focus:ring-primary/20 bg-white border-surface-300 dark:border-surface-600 dark:bg-surface-800" />
+              <span className="text-sm font-medium text-surface-700 dark:text-surface-300 whitespace-nowrap">قیمت دودندان</span>
+            </label>
+          </div>
+          <button
+            type="submit"
+            className="w-full lg:w-auto px-6 h-[46px] bg-primary text-white rounded-xl font-medium hover:bg-primary-hover flex items-center justify-center gap-2 transition-colors shrink-0"
           >
-            <option value="">انتخاب دسته</option>
-            {orderedCategories.map(c => (
-              <option key={c.id} value={c.id}>{'\u00A0\u00A0'.repeat(c.depth)}{c.name}</option>
-            ))}
-          </select>
+            <Plus className="w-5 h-5" />
+            <span>افزودن</span>
+          </button>
         </div>
-        <div className="w-full lg:w-40 space-y-1.5">
-          <label className="text-sm font-medium text-surface-700 dark:text-surface-300 flex items-center gap-1">
-            <Type className="w-3.5 h-3.5 text-primary" />
-            سایز فونت
-          </label>
-          <select
-            value={newFontSize === null ? '' : newFontSize}
-            onChange={e => setNewFontSize(e.target.value === '' ? null : Number(e.target.value))}
-            className="w-full px-3 py-2.5 rounded-xl border border-surface-200 bg-surface-50 dark:bg-surface-800 dark:border-surface-700 dark:text-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 text-sm"
-          >
-            <option value="">خودکار</option>
-            <option value="11">کوچک (11px)</option>
-            <option value="12">12px</option>
-            <option value="13">استاندارد (13px)</option>
-            <option value="14">14px</option>
-            <option value="15">بزرگ (15px)</option>
-            <option value="16">16px</option>
-            <option value="18">خیلی بزرگ (18px)</option>
-            <option value="20">20px</option>
-          </select>
-        </div>
-        <div className="flex gap-4 items-center h-[46px] px-2 w-full lg:w-auto">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={newHasLamb} onChange={e => setNewHasLamb(e.target.checked)} className="w-4 h-4 rounded text-primary focus:ring-primary/20 bg-white border-surface-300 dark:border-surface-600 dark:bg-surface-800" />
-            <span className="text-sm font-medium text-surface-700 dark:text-surface-300 whitespace-nowrap">قیمت بره</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input type="checkbox" checked={newHasTwoTeeth} onChange={e => setNewHasTwoTeeth(e.target.checked)} className="w-4 h-4 rounded text-primary focus:ring-primary/20 bg-white border-surface-300 dark:border-surface-600 dark:bg-surface-800" />
-            <span className="text-sm font-medium text-surface-700 dark:text-surface-300 whitespace-nowrap">قیمت دودندان</span>
-          </label>
-        </div>
-        <button
-          type="submit"
-          className="w-full lg:w-auto px-6 h-[46px] bg-primary text-white rounded-xl font-medium hover:bg-primary-hover flex items-center justify-center gap-2 transition-colors shrink-0"
-        >
-          <Plus className="w-5 h-5" />
-          <span>افزودن</span>
-        </button>
+
+        {addFormError && (
+          <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-xs font-medium flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{addFormError}</span>
+          </div>
+        )}
       </form>
 
       {/* Products List */}
@@ -441,6 +600,7 @@ export function Products() {
                   <th className="px-6 py-4 font-medium">نام قلم</th>
                   <th className="px-6 py-4 font-medium">دسته‌بندی</th>
                   <th className="px-6 py-4 font-medium">پیکربندی ستون‌ها</th>
+                  <th className="px-6 py-4 font-medium">شاخص CRM</th>
                   <th className="px-6 py-4 font-medium text-left">عملیات</th>
                 </tr>
               </thead>
@@ -457,19 +617,20 @@ export function Products() {
                         isEditing={editingId === product.id} 
                         editForm={editForm} 
                         setEditForm={setEditForm} 
+                        editError={editingId === product.id ? editError : null}
                         saveEdit={saveEdit} 
                         startEdit={startEdit} 
                         toggleVisibility={toggleVisibility} 
                         removeProduct={removeProduct} 
                         setEditingId={setEditingId} 
                         orderedCategories={orderedCategories}
-                        isSearchActive={searchQuery.trim().length > 0}
+                        isFilterActive={isFilterActive}
                       />
                     );
                   })}
                   {filteredProducts.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-surface-500">
+                      <td colSpan={6} className="px-6 py-8 text-center text-surface-500">
                         هیچ موردی یافت نشد.
                       </td>
                     </tr>
