@@ -268,11 +268,11 @@ async function startServer() {
       }
       // Security Hardening: Derive audit identity strictly from authenticated user!
       const auditIdentity = req.user.name ? `${req.user.name} (${req.user.username})` : req.user.username;
-      const { changedProducts } = db.updateProductPrices(req.body.updates, auditIdentity);
+      const { changedVariants } = db.updateProductPrices(req.body.updates, auditIdentity);
 
       // Fire-and-forget asynchronous CRM sync queue (never blocks or fails local price saving)
-      if (changedProducts.length > 0) {
-        crmSync.enqueueAutoPriceSync(changedProducts, auditIdentity).catch(err => {
+      if (changedVariants.length > 0) {
+        crmSync.enqueueAutoPriceSync(changedVariants, auditIdentity).catch(err => {
           console.error('[CRM_SYNC] Failed to enqueue auto price sync:', err);
         });
       }
@@ -359,7 +359,12 @@ async function startServer() {
         req.body.hasLamb,
         req.body.hasTwoTeeth,
         req.body.fontSize,
-        crmIndex
+        {
+          crmProductIndex: crmIndex,
+          crmLambIndex: req.body.crmLambIndex,
+          crmTwoTeethIndex: req.body.crmTwoTeethIndex,
+          crmMappings: req.body.crmMappings,
+        }
       );
       res.json(prod);
     } catch (e: any) {
@@ -380,7 +385,12 @@ async function startServer() {
         req.body.hasLamb,
         req.body.hasTwoTeeth,
         req.body.fontSize,
-        crmIndex
+        {
+          crmProductIndex: crmIndex,
+          crmLambIndex: req.body.crmLambIndex,
+          crmTwoTeethIndex: req.body.crmTwoTeethIndex,
+          crmMappings: req.body.crmMappings,
+        }
       );
       res.json({ success: true });
     } catch (e: any) {

@@ -9,6 +9,19 @@ export interface Category {
   hasTwoTeeth: boolean;
 }
 
+export type CrmPriceType = 'single' | 'lamb' | 'two_teeth';
+
+export interface ProductCrmMapping {
+  id?: string;
+  productId?: string;
+  priceType: CrmPriceType;
+  variantLabel: string;
+  crmProductIndex: number;
+  lastSyncStatus?: CrmSyncStatus | null;
+  lastSyncedAt?: string | null;
+  lastSyncError?: string | null;
+}
+
 export interface Product {
   id: string;
   categoryId: string;
@@ -23,6 +36,9 @@ export interface Product {
   hasTwoTeeth: boolean;
   fontSize?: number | null;
   crmProductIndex?: number | null;
+  crmLambIndex?: number | null;
+  crmTwoTeethIndex?: number | null;
+  crmMappings?: ProductCrmMapping[];
 }
 
 export type CrmSyncStatus = 'pending' | 'sending' | 'success' | 'failed' | 'needs_review';
@@ -52,6 +68,8 @@ export interface CrmSyncLog {
   batchId: string | null;
   productId: string | null;
   productName: string;
+  priceType?: CrmPriceType;
+  variantLabel?: string;
   crmProductIndex: number;
   rawPrice: number | null;
   sentPrice: number;
@@ -74,6 +92,7 @@ export interface CrmSyncStats {
   totalProducts: number;
   withCrmIndex: number;
   withoutCrmIndex: number;
+  totalMappingsCount?: number;
   syncedProductsCount: number;
   unsyncedProductsCount: number;
   failedProductsCount: number;
@@ -88,6 +107,7 @@ export interface CrmBulkPreview {
   totalProducts: number;
   withCrmIndex: number;
   withoutCrmIndex: number;
+  totalMappingsCount?: number;
   eligibleCount: number;
   missingPriceWithIndexCount: number;
   liveTransmissionEnabled: boolean;
@@ -99,6 +119,8 @@ export interface CrmBulkPreview {
   items: Array<{
     productId: string;
     productName: string;
+    priceType?: CrmPriceType;
+    variantLabel?: string;
     crmProductIndex: number;
     rawPrice: number;
     sentPrice: number;
@@ -266,18 +288,51 @@ class APIClient {
   async getProductsByCategory(categoryId: string): Promise<Product[]> {
     return this.request<Product[]>(`/products/category/${categoryId}`);
   }
-  async addProduct(categoryId: string, name: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true, fontSize?: number | null, crmProductIndex?: number | null): Promise<Product> {
+  async addProduct(
+    categoryId: string,
+    name: string,
+    hasLamb: boolean = true,
+    hasTwoTeeth: boolean = true,
+    fontSize?: number | null,
+    crmOptions?: number | null | {
+      crmProductIndex?: number | null;
+      crmLambIndex?: number | null;
+      crmTwoTeethIndex?: number | null;
+      crmMappings?: ProductCrmMapping[];
+    }
+  ): Promise<Product> {
+    const crmPayload =
+      crmOptions && typeof crmOptions === 'object'
+        ? crmOptions
+        : { crmProductIndex: crmOptions ?? null };
     const res = await this.request<Product>('/products', {
       method: 'POST',
-      body: JSON.stringify({ categoryId, name, hasLamb, hasTwoTeeth, fontSize: fontSize ?? null, crmProductIndex: crmProductIndex ?? null })
+      body: JSON.stringify({ categoryId, name, hasLamb, hasTwoTeeth, fontSize: fontSize ?? null, ...crmPayload })
     });
     this.notify();
     return res;
   }
-  async updateProduct(id: string, name: string, categoryId: string, hasLamb: boolean = true, hasTwoTeeth: boolean = true, fontSize?: number | null, crmProductIndex?: number | null): Promise<void> {
+  async updateProduct(
+    id: string,
+    name: string,
+    categoryId: string,
+    hasLamb: boolean = true,
+    hasTwoTeeth: boolean = true,
+    fontSize?: number | null,
+    crmOptions?: number | null | {
+      crmProductIndex?: number | null;
+      crmLambIndex?: number | null;
+      crmTwoTeethIndex?: number | null;
+      crmMappings?: ProductCrmMapping[];
+    }
+  ): Promise<void> {
+    const crmPayload =
+      crmOptions && typeof crmOptions === 'object'
+        ? crmOptions
+        : { crmProductIndex: crmOptions ?? null };
     await this.request<void>(`/products/${id}`, {
       method: 'PUT',
-      body: JSON.stringify({ name, categoryId, hasLamb, hasTwoTeeth, fontSize: fontSize ?? null, crmProductIndex: crmProductIndex ?? null })
+      body: JSON.stringify({ name, categoryId, hasLamb, hasTwoTeeth, fontSize: fontSize ?? null, ...crmPayload })
     });
     this.notify();
   }

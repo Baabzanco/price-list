@@ -16,15 +16,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export function resolveBasePrice(
-  product: { priceLamb: number | null; priceTwoTeeth: number | null; hasLamb?: boolean; hasTwoTeeth?: boolean },
-  settings: db.CrmSettings
+export function resolveVariantPrice(
+  product: { priceLamb: number | null; priceTwoTeeth: number | null },
+  priceType: db.CrmPriceType
 ): number | null {
-  if (settings.priceSource === 'two_teeth_then_lamb') {
-    const val = product.priceTwoTeeth ?? product.priceLamb ?? null;
-    return typeof val === 'number' && Number.isFinite(val) ? val : null;
-  }
-  const val = product.priceLamb ?? product.priceTwoTeeth ?? null;
+  const val = priceType === 'two_teeth' ? product.priceTwoTeeth : product.priceLamb;
   return typeof val === 'number' && Number.isFinite(val) ? val : null;
 }
 
@@ -289,11 +285,11 @@ async function dispatchLogIds(
 }
 
 export async function enqueueAutoPriceSync(
-  changedProducts: db.PriceChangedProductInfo[],
+  changedVariants: db.PriceChangedVariantInfo[],
   triggeredBy: string
 ): Promise<{ queuedCount: number }> {
   const settings = db.getCrmSettings();
-  const connected = changedProducts.filter(p => p.crmProductIndex !== null && p.crmProductIndex !== undefined);
+  const connected = changedVariants.filter(v => Number.isFinite(v.crmProductIndex) && v.crmProductIndex > 0);
 
   if (connected.length === 0) {
     return { queuedCount: 0 };
@@ -301,25 +297,30 @@ export async function enqueueAutoPriceSync(
 
   const queuedIds: string[] = [];
 
-  for (const prod of connected) {
-    const rawPrice = resolveBasePrice(prod, settings);
+  for (const variant of connected) {
+    const rawPrice =
+      typeof variant.rawPrice === 'number' && Number.isFinite(variant.rawPrice)
+        ? variant.rawPrice
+        : null;
     if (rawPrice === null) continue;
 
     const sentPrice = computeSentPrice(rawPrice, settings);
-    const crmIndex = prod.crmProductIndex!;
     const disabledNote =
       !settings.liveTransmissionEnabled || !settings.priceUnitConfirmed
         ? 'ارسال واقعی غیرفعال است (واحد قیمت CRM هنوز تایید نشده است).'
         : null;
 
-    // Supersede older retries for this product so stale prices cannot overwrite newer ones
-    db.cancelPendingRetriesForProduct(prod.id);
+    // Supersede older retries ONLY for this specific (productId, priceType) variant
+    db.cancelPendingRetriesForProductVariant(variant.productId, variant.priceType);
 
-    // Coalesce rapid successive changes into existing pending auto log if not yet sent
-    const existingPending = db.findPendingAutoLogForProduct(prod.id);
+    // Coalesce rapid successive changes per (productId, priceType)
+    const existingPending = db.findPendingAutoLogForProductVariant(variant.productId, variant.priceType);
     if (existingPending) {
       db.updateCrmSyncLog(existingPending.id, {
-        productName: prod.name,
+        productName: variant.productName,
+        priceType: variant.priceType,
+        variantLabel: variant.variantLabel,
+        crmProductIndex: variant.crmProductIndex,
         rawPrice,
         sentPrice,
         currencyUnit: settings.priceUnitLabel,
@@ -329,9 +330,11 @@ export async function enqueueAutoPriceSync(
       queuedIds.push(existingPending.id);
     } else {
       const created = db.createCrmSyncLog({
-        productId: prod.id,
-        productName: prod.name,
-        crmProductIndex: crmIndex,
+        productId: variant.productId,
+        productName: variant.productName,
+        priceType: variant.priceType,
+        variantLabel: variant.variantLabel,
+        crmProductIndex: variant.crmProductIndex,
         rawPrice,
         sentPrice,
         currencyUnit: settings.priceUnitLabel,
@@ -387,48 +390,50 @@ export function getManualBulkPreview() {
   const settings = db.getCrmSettings();
   const products = db.getProducts();
 
-  const withIndex = products.filter(p => p.crmProductIndex !== null && p.crmProductIndex !== undefined);
-  const withoutIndex = products.length - withIndex.length;
+  const withIndexProducts = products.filter(p => (p.crmMappings?.length ?? 0) > 0);
+  const withoutIndexProducts = products.length - withIndexProducts.length;
 
   const eligibleItems: Array<{
     productId: string;
     productName: string;
+    priceType: db.CrmPriceType;
+    variantLabel: string;
     crmProductIndex: number;
     rawPrice: number;
     sentPrice: number;
     isActive: boolean;
   }> = [];
 
+  let totalMappingsCount = 0;
   let missingPriceWithIndexCount = 0;
 
-  for (const prod of withIndex) {
-    const rawPrice = resolveBasePrice(
-      {
-        priceLamb: prod.priceLamb,
-        priceTwoTeeth: prod.priceTwoTeeth,
-        hasLamb: prod.hasLamb,
-        hasTwoTeeth: prod.hasTwoTeeth,
-      },
-      settings
-    );
-    if (rawPrice === null) {
-      missingPriceWithIndexCount++;
-      continue;
+  for (const prod of withIndexProducts) {
+    const mappings = prod.crmMappings || [];
+    for (const mapping of mappings) {
+      totalMappingsCount++;
+      const rawPrice = resolveVariantPrice(prod, mapping.priceType);
+      if (rawPrice === null) {
+        missingPriceWithIndexCount++;
+        continue;
+      }
+      eligibleItems.push({
+        productId: prod.id,
+        productName: prod.name,
+        priceType: mapping.priceType,
+        variantLabel: mapping.variantLabel || db.getVariantLabel(mapping.priceType),
+        crmProductIndex: mapping.crmProductIndex,
+        rawPrice,
+        sentPrice: computeSentPrice(rawPrice, settings),
+        isActive: prod.isActive,
+      });
     }
-    eligibleItems.push({
-      productId: prod.id,
-      productName: prod.name,
-      crmProductIndex: prod.crmProductIndex!,
-      rawPrice,
-      sentPrice: computeSentPrice(rawPrice, settings),
-      isActive: prod.isActive,
-    });
   }
 
   return {
     totalProducts: products.length,
-    withCrmIndex: withIndex.length,
-    withoutCrmIndex: withoutIndex,
+    withCrmIndex: withIndexProducts.length,
+    withoutCrmIndex: withoutIndexProducts,
+    totalMappingsCount,
     eligibleCount: eligibleItems.length,
     missingPriceWithIndexCount,
     liveTransmissionEnabled: settings.liveTransmissionEnabled,
@@ -467,10 +472,12 @@ export async function triggerManualBulkSync(triggeredBy: string): Promise<SyncBa
 
   const createdIds: string[] = [];
   for (const item of preview.items) {
-    db.cancelPendingRetriesForProduct(item.productId);
+    db.cancelPendingRetriesForProductVariant(item.productId, item.priceType);
     const created = db.createCrmSyncLog({
       productId: item.productId,
       productName: item.productName,
+      priceType: item.priceType,
+      variantLabel: item.variantLabel,
       crmProductIndex: item.crmProductIndex,
       rawPrice: item.rawPrice,
       sentPrice: item.sentPrice,
@@ -525,24 +532,24 @@ export async function retryCrmLogs(options: {
 
   const preparedIds: string[] = [];
   for (const log of targetLogs) {
-    // Refresh price & crm index from current DB product state when possible
+    // Refresh price & crm index from current DB product + variant mapping when possible
     let rawPrice = log.rawPrice;
     let sentPrice = log.sentPrice;
     let productName = log.productName;
+    let crmProductIndex = log.crmProductIndex;
+    let variantLabel = log.variantLabel || db.getVariantLabel(log.priceType || 'single');
 
     if (log.productId) {
       const product = db.getProductById(log.productId);
-      if (product && product.crmProductIndex !== null && product.crmProductIndex !== undefined) {
+      if (product) {
         productName = product.name;
-        const latestBase = resolveBasePrice(
-          {
-            priceLamb: product.priceLamb,
-            priceTwoTeeth: product.priceTwoTeeth,
-            hasLamb: product.hasLamb,
-            hasTwoTeeth: product.hasTwoTeeth,
-          },
-          settings
-        );
+        const priceType = (log.priceType || 'single') as db.CrmPriceType;
+        const matchingMapping = (product.crmMappings || []).find(m => m.priceType === priceType);
+        if (matchingMapping) {
+          crmProductIndex = matchingMapping.crmProductIndex;
+          variantLabel = matchingMapping.variantLabel;
+        }
+        const latestBase = resolveVariantPrice(product, priceType);
         if (latestBase !== null) {
           rawPrice = latestBase;
           sentPrice = computeSentPrice(latestBase, settings);
@@ -552,6 +559,8 @@ export async function retryCrmLogs(options: {
 
     db.updateCrmSyncLog(log.id, {
       productName,
+      variantLabel,
+      crmProductIndex,
       rawPrice,
       sentPrice,
       currencyUnit: settings.priceUnitLabel,

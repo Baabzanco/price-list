@@ -56,6 +56,19 @@ export interface Category {
   hasTwoTeeth: boolean;
 }
 
+export type CrmPriceType = 'single' | 'lamb' | 'two_teeth';
+
+export interface ProductCrmMapping {
+  id?: string;
+  productId?: string;
+  priceType: CrmPriceType;
+  variantLabel: string;
+  crmProductIndex: number;
+  lastSyncStatus?: CrmSyncStatus | null;
+  lastSyncedAt?: string | null;
+  lastSyncError?: string | null;
+}
+
 export interface Product {
   id: string;
   categoryId: string;
@@ -70,6 +83,9 @@ export interface Product {
   hasTwoTeeth?: boolean;
   fontSize?: number | null;
   crmProductIndex?: number | null;
+  crmLambIndex?: number | null;
+  crmTwoTeethIndex?: number | null;
+  crmMappings?: ProductCrmMapping[];
 }
 
 export type CrmSyncStatus = 'pending' | 'sending' | 'success' | 'failed' | 'needs_review';
@@ -98,6 +114,8 @@ export interface CrmSyncLog {
   batchId: string | null;
   productId: string | null;
   productName: string;
+  priceType: CrmPriceType;
+  variantLabel: string;
   crmProductIndex: number;
   rawPrice: number | null;
   sentPrice: number;
@@ -323,11 +341,25 @@ export function initDb() {
       isActive INTEGER NOT NULL DEFAULT 1
     );
 
+    CREATE TABLE IF NOT EXISTS product_crm_mappings (
+      id TEXT PRIMARY KEY,
+      productId TEXT NOT NULL,
+      priceType TEXT NOT NULL CHECK(priceType IN ('single', 'lamb', 'two_teeth')),
+      variantLabel TEXT NOT NULL,
+      crmProductIndex INTEGER NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL,
+      FOREIGN KEY(productId) REFERENCES products(id) ON DELETE CASCADE,
+      UNIQUE(productId, priceType)
+    );
+
     CREATE TABLE IF NOT EXISTS crm_sync_logs (
       id TEXT PRIMARY KEY,
       batchId TEXT,
       productId TEXT,
       productName TEXT NOT NULL,
+      priceType TEXT NOT NULL DEFAULT 'single',
+      variantLabel TEXT NOT NULL DEFAULT 'قیمت واحد',
       crmProductIndex INTEGER NOT NULL,
       rawPrice REAL,
       sentPrice REAL NOT NULL,
@@ -352,6 +384,8 @@ export function initDb() {
     CREATE INDEX IF NOT EXISTS idx_crm_sync_logs_status ON crm_sync_logs(status);
     CREATE INDEX IF NOT EXISTS idx_crm_sync_logs_product ON crm_sync_logs(productId);
     CREATE INDEX IF NOT EXISTS idx_crm_sync_logs_created ON crm_sync_logs(createdAt);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_product_crm_mappings_index ON product_crm_mappings(crmProductIndex);
+    CREATE INDEX IF NOT EXISTS idx_product_crm_mappings_product ON product_crm_mappings(productId);
   `);
   try { db.prepare("ALTER TABLE categories ADD COLUMN parentId TEXT").run(); } catch(e){}
   try { db.prepare("ALTER TABLE categories ADD COLUMN hasLamb INTEGER NOT NULL DEFAULT 1").run(); } catch(e){}
@@ -370,6 +404,46 @@ export function initDb() {
     ON products(crm_product_index)
     WHERE crm_product_index IS NOT NULL;
   `);
+
+  // Safe idempotent migration for multi-variant columns on crm_sync_logs
+  const crmLogColumns = db.prepare("PRAGMA table_info(crm_sync_logs)").all() as { name: string }[];
+  if (!crmLogColumns.some(col => col.name === 'priceType')) {
+    db.prepare("ALTER TABLE crm_sync_logs ADD COLUMN priceType TEXT NOT NULL DEFAULT 'single'").run();
+  }
+  if (!crmLogColumns.some(col => col.name === 'variantLabel')) {
+    db.prepare("ALTER TABLE crm_sync_logs ADD COLUMN variantLabel TEXT NOT NULL DEFAULT 'قیمت واحد'").run();
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_crm_sync_logs_product_variant ON crm_sync_logs(productId, priceType);
+  `);
+
+  // Idempotent migration from legacy products.crm_product_index into product_crm_mappings
+  const legacyMappedProducts = db.prepare(`
+    SELECT p.id, p.hasLamb, p.hasTwoTeeth, p.crm_product_index
+    FROM products p
+    WHERE p.crm_product_index IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM product_crm_mappings m WHERE m.productId = p.id)
+  `).all() as Array<{ id: string; hasLamb: number; hasTwoTeeth: number; crm_product_index: number }>;
+
+  if (legacyMappedProducts.length > 0) {
+    const now = new Date().toISOString();
+    const insertMapping = db.prepare(`
+      INSERT OR IGNORE INTO product_crm_mappings (id, productId, priceType, variantLabel, crmProductIndex, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    const migrateTx = db.transaction(() => {
+      for (const p of legacyMappedProducts) {
+        const hasLamb = !!p.hasLamb;
+        const hasTwoTeeth = !!p.hasTwoTeeth;
+        const priceType: CrmPriceType = (!hasLamb && !hasTwoTeeth)
+          ? 'single'
+          : (hasLamb ? 'lamb' : 'two_teeth');
+        const variantLabel = getVariantLabel(priceType);
+        insertMapping.run(uuidv4(), p.id, priceType, variantLabel, p.crm_product_index, now, now);
+      }
+    });
+    migrateTx();
+  }
 
   // Seed default CRM settings safely if missing
   db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(
@@ -464,7 +538,86 @@ export function deleteCategory(id: string) {
   return { success: true };
 }
 
-function mapProductRow(r: any): Product {
+export function getVariantLabel(priceType: CrmPriceType): string {
+  if (priceType === 'lamb') return 'بره';
+  if (priceType === 'two_teeth') return 'دودندان';
+  return 'قیمت واحد';
+}
+
+export function getActivePriceTypesForProduct(hasLamb: boolean, hasTwoTeeth: boolean): CrmPriceType[] {
+  if (!hasLamb && !hasTwoTeeth) return ['single'];
+  const types: CrmPriceType[] = [];
+  if (hasLamb) types.push('lamb');
+  if (hasTwoTeeth) types.push('two_teeth');
+  return types;
+}
+
+function loadMappingsByProductIds(productIds?: string[]): Map<string, ProductCrmMapping[]> {
+  const result = new Map<string, ProductCrmMapping[]>();
+  const mappings = productIds && productIds.length === 1
+    ? (db.prepare('SELECT * FROM product_crm_mappings WHERE productId = ? ORDER BY CASE priceType WHEN \'single\' THEN 0 WHEN \'lamb\' THEN 1 ELSE 2 END').all(productIds[0]) as any[])
+    : (db.prepare('SELECT * FROM product_crm_mappings ORDER BY CASE priceType WHEN \'single\' THEN 0 WHEN \'lamb\' THEN 1 ELSE 2 END').all() as any[]);
+
+  // Fetch latest sync log status per (productId, priceType)
+  const latestLogRows = db.prepare(`
+    SELECT l.productId, l.priceType, l.status, l.sentAt, l.updatedAt, l.errorMessage
+    FROM crm_sync_logs l
+    WHERE l.productId IS NOT NULL
+      AND l.id = (
+        SELECT l2.id FROM crm_sync_logs l2
+        WHERE l2.productId = l.productId AND l2.priceType = l.priceType
+        ORDER BY l2.createdAt DESC, l2.rowid DESC
+        LIMIT 1
+      )
+  `).all() as Array<{ productId: string; priceType: CrmPriceType; status: CrmSyncStatus; sentAt: string | null; updatedAt: string; errorMessage: string | null }>;
+
+  const statusByKey = new Map<string, { status: CrmSyncStatus; sentAt: string | null; errorMessage: string | null }>();
+  for (const row of latestLogRows) {
+    statusByKey.set(`${row.productId}:${row.priceType}`, {
+      status: row.status,
+      sentAt: row.sentAt || row.updatedAt,
+      errorMessage: row.errorMessage || null,
+    });
+  }
+
+  for (const m of mappings) {
+    const logInfo = statusByKey.get(`${m.productId}:${m.priceType}`);
+    const entry: ProductCrmMapping = {
+      id: m.id,
+      productId: m.productId,
+      priceType: m.priceType as CrmPriceType,
+      variantLabel: m.variantLabel || getVariantLabel(m.priceType as CrmPriceType),
+      crmProductIndex: m.crmProductIndex,
+      lastSyncStatus: logInfo?.status ?? null,
+      lastSyncedAt: logInfo?.sentAt ?? null,
+      lastSyncError: logInfo?.errorMessage ?? null,
+    };
+    const arr = result.get(m.productId) || [];
+    arr.push(entry);
+    result.set(m.productId, arr);
+  }
+  return result;
+}
+
+function mapProductRow(r: any, mappings?: ProductCrmMapping[]): Product {
+  const hasLamb = !!r.hasLamb;
+  const hasTwoTeeth = !!r.hasTwoTeeth;
+  const resolvedMappings = mappings ?? [];
+  const singleMap = resolvedMappings.find(m => m.priceType === 'single');
+  const lambMap = resolvedMappings.find(m => m.priceType === 'lamb');
+  const twoTeethMap = resolvedMappings.find(m => m.priceType === 'two_teeth');
+  const isMultiVariant = hasLamb && hasTwoTeeth;
+
+  let singleDisplayIndex: number | null = null;
+  if (!isMultiVariant) {
+    singleDisplayIndex =
+      (!hasLamb && !hasTwoTeeth ? singleMap?.crmProductIndex : null) ??
+      (hasLamb ? lambMap?.crmProductIndex : null) ??
+      (hasTwoTeeth ? twoTeethMap?.crmProductIndex : null) ??
+      r.crm_product_index ??
+      null;
+  }
+
   return {
     id: r.id,
     categoryId: r.categoryId,
@@ -475,10 +628,13 @@ function mapProductRow(r: any): Product {
     sortOrder: r.sortOrder,
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
-    hasLamb: !!r.hasLamb,
-    hasTwoTeeth: !!r.hasTwoTeeth,
+    hasLamb,
+    hasTwoTeeth,
     fontSize: r.fontSize ?? null,
-    crmProductIndex: r.crm_product_index ?? null,
+    crmProductIndex: singleDisplayIndex,
+    crmLambIndex: lambMap?.crmProductIndex ?? null,
+    crmTwoTeethIndex: twoTeethMap?.crmProductIndex ?? null,
+    crmMappings: resolvedMappings,
   };
 }
 
@@ -506,29 +662,156 @@ export function normalizeCrmProductIndex(raw: unknown): number | null {
 
 function throwDuplicateCrmIndexError(crmIndex: number, excludeProductId?: string): never {
   const conflict = excludeProductId
-    ? (db.prepare('SELECT id, name FROM products WHERE crm_product_index = ? AND id != ?').get(crmIndex, excludeProductId) as any)
-    : (db.prepare('SELECT id, name FROM products WHERE crm_product_index = ?').get(crmIndex) as any);
-  const conflictName = conflict?.name || 'محصول دیگر';
-  const err: any = new Error(`این شاخص CRM قبلاً برای محصول ${conflictName} ثبت شده است. لطفاً شاخص دیگری وارد کنید.`);
+    ? (db.prepare(`
+        SELECT m.productId, m.priceType, m.variantLabel, p.name as productName
+        FROM product_crm_mappings m
+        JOIN products p ON p.id = m.productId
+        WHERE m.crmProductIndex = ? AND m.productId != ?
+      `).get(crmIndex, excludeProductId) as any)
+    : (db.prepare(`
+        SELECT m.productId, m.priceType, m.variantLabel, p.name as productName
+        FROM product_crm_mappings m
+        JOIN products p ON p.id = m.productId
+        WHERE m.crmProductIndex = ?
+      `).get(crmIndex) as any);
+
+  const conflictName = conflict?.productName || 'محصول دیگر';
+  const conflictVariantLabel = conflict?.variantLabel || getVariantLabel((conflict?.priceType as CrmPriceType) || 'single');
+  const err: any = new Error(
+    `این شاخص CRM (${crmIndex}) قبلاً برای محصول «${conflictName}» (نوع: ${conflictVariantLabel}) ثبت شده است. لطفاً شاخص دیگری وارد کنید.`
+  );
   err.statusCode = 409;
   err.code = 'DUPLICATE_CRM_INDEX';
   err.conflictProductName = conflictName;
+  err.conflictVariantLabel = conflictVariantLabel;
   throw err;
+}
+
+export interface ProductCrmInput {
+  crmProductIndex?: unknown;
+  crmLambIndex?: unknown;
+  crmTwoTeethIndex?: unknown;
+  crmMappings?: Array<{ priceType?: CrmPriceType; variantLabel?: string; crmProductIndex?: unknown }>;
+}
+
+function resolveDesiredMappingsForProduct(
+  hasLamb: boolean,
+  hasTwoTeeth: boolean,
+  productName: string,
+  crmInput: ProductCrmInput,
+  existingMappings?: ProductCrmMapping[]
+): { desired: Array<{ priceType: CrmPriceType; variantLabel: string; crmProductIndex: number }>; singleMirrorIndex: number | null } {
+  const activeTypes = getActivePriceTypesForProduct(hasLamb, hasTwoTeeth);
+  const isMultiVariant = hasLamb && hasTwoTeeth;
+
+  const hasExplicitMappingsArray = crmInput.crmMappings !== undefined;
+  const hasExplicitLamb = crmInput.crmLambIndex !== undefined;
+  const hasExplicitTwoTeeth = crmInput.crmTwoTeethIndex !== undefined;
+  const hasExplicitSingle = crmInput.crmProductIndex !== undefined;
+  const hasAnyExplicitField = hasExplicitMappingsArray || hasExplicitLamb || hasExplicitTwoTeeth || hasExplicitSingle;
+
+  const byType = new Map<CrmPriceType, number | null>();
+
+  if (!hasAnyExplicitField && existingMappings) {
+    // Preserve matching existing mappings when CRM fields weren't sent at all
+    for (const m of existingMappings) {
+      if (activeTypes.includes(m.priceType)) {
+        byType.set(m.priceType, m.crmProductIndex);
+      }
+    }
+  } else if (hasExplicitMappingsArray) {
+    const arr = Array.isArray(crmInput.crmMappings) ? crmInput.crmMappings : [];
+    for (const item of arr) {
+      if (!item || !item.priceType) continue;
+      if (!activeTypes.includes(item.priceType)) continue;
+      const normalized = normalizeCrmProductIndex(item.crmProductIndex);
+      if (normalized !== null) {
+        byType.set(item.priceType, normalized);
+      }
+    }
+  } else if (isMultiVariant) {
+    if (hasExplicitLamb) {
+      byType.set('lamb', normalizeCrmProductIndex(crmInput.crmLambIndex));
+    } else if (existingMappings) {
+      const existingLamb = existingMappings.find(m => m.priceType === 'lamb');
+      if (existingLamb) byType.set('lamb', existingLamb.crmProductIndex);
+    }
+
+    if (hasExplicitTwoTeeth) {
+      byType.set('two_teeth', normalizeCrmProductIndex(crmInput.crmTwoTeethIndex));
+    } else if (existingMappings) {
+      const existingTwoTeeth = existingMappings.find(m => m.priceType === 'two_teeth');
+      if (existingTwoTeeth) byType.set('two_teeth', existingTwoTeeth.crmProductIndex);
+    }
+
+    // If neither lamb nor two_teeth field was provided on a multi-variant product and only crmProductIndex was sent:
+    if (!hasExplicitLamb && !hasExplicitTwoTeeth && hasExplicitSingle) {
+      const normalizedSingle = normalizeCrmProductIndex(crmInput.crmProductIndex);
+      if (normalizedSingle !== null) {
+        byType.set('lamb', normalizedSingle);
+      }
+    }
+  } else {
+    // Single-variant product: single | lamb | two_teeth
+    const onlyType = activeTypes[0];
+    let rawVal: unknown = undefined;
+    if (onlyType === 'lamb' && hasExplicitLamb) rawVal = crmInput.crmLambIndex;
+    else if (onlyType === 'two_teeth' && hasExplicitTwoTeeth) rawVal = crmInput.crmTwoTeethIndex;
+    else if (hasExplicitSingle) rawVal = crmInput.crmProductIndex;
+    else if (hasExplicitLamb) rawVal = crmInput.crmLambIndex;
+    else if (hasExplicitTwoTeeth) rawVal = crmInput.crmTwoTeethIndex;
+
+    if (rawVal !== undefined) {
+      const normalized = normalizeCrmProductIndex(rawVal);
+      if (normalized !== null) {
+        byType.set(onlyType, normalized);
+      }
+    }
+  }
+
+  const desired: Array<{ priceType: CrmPriceType; variantLabel: string; crmProductIndex: number }> = [];
+  const seenIndices = new Map<number, string>();
+
+  for (const pt of activeTypes) {
+    const val = byType.get(pt) ?? null;
+    if (val === null) continue;
+    const label = getVariantLabel(pt);
+    const prevLabel = seenIndices.get(val);
+    if (prevLabel) {
+      const err: any = new Error(
+        `شاخص CRM (${val}) نمی‌تواند هم‌زمان برای دو نوع «${prevLabel}» و «${label}» در محصول «${productName}» یکسان باشد.`
+      );
+      err.statusCode = 409;
+      err.code = 'DUPLICATE_CRM_INDEX';
+      err.conflictProductName = productName;
+      err.conflictVariantLabel = prevLabel;
+      throw err;
+    }
+    seenIndices.set(val, label);
+    desired.push({ priceType: pt, variantLabel: label, crmProductIndex: val });
+  }
+
+  const singleMirrorIndex = !isMultiVariant && desired.length === 1 ? desired[0].crmProductIndex : null;
+  return { desired, singleMirrorIndex };
 }
 
 export function getProducts(): Product[] {
   const rows = db.prepare('SELECT * FROM products ORDER BY sortOrder ASC').all();
-  return rows.map(mapProductRow);
+  const mappingsMap = loadMappingsByProductIds();
+  return rows.map((r: any) => mapProductRow(r, mappingsMap.get(r.id) || []));
 }
 
 export function getProductsByCategory(categoryId: string): Product[] {
   const rows = db.prepare('SELECT * FROM products WHERE categoryId = ? ORDER BY sortOrder ASC').all(categoryId);
-  return rows.map(mapProductRow);
+  const mappingsMap = loadMappingsByProductIds();
+  return rows.map((r: any) => mapProductRow(r, mappingsMap.get(r.id) || []));
 }
 
 export function getProductById(id: string): Product | null {
   const row = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-  return row ? mapProductRow(row) : null;
+  if (!row) return null;
+  const mappingsMap = loadMappingsByProductIds([id]);
+  return mapProductRow(row, mappingsMap.get(id) || []);
 }
 
 export function addProduct(
@@ -537,46 +820,48 @@ export function addProduct(
   hasLamb: boolean = true,
   hasTwoTeeth: boolean = true,
   fontSize: number | null = null,
-  crmProductIndex?: unknown
+  crmInput?: unknown
 ): Product {
-  const normalizedCrmIndex = normalizeCrmProductIndex(crmProductIndex);
+  const normalizedInput: ProductCrmInput =
+    crmInput && typeof crmInput === 'object' && !Array.isArray(crmInput)
+      ? (crmInput as ProductCrmInput)
+      : { crmProductIndex: crmInput };
+
+  const { desired, singleMirrorIndex } = resolveDesiredMappingsForProduct(hasLamb, hasTwoTeeth, name, normalizedInput);
   const id = `p_${uuidv4()}`;
   const now = new Date().toISOString();
 
   const tx = db.transaction(() => {
-    if (normalizedCrmIndex !== null) {
-      const existing = db.prepare('SELECT id, name FROM products WHERE crm_product_index = ?').get(normalizedCrmIndex) as any;
+    for (const item of desired) {
+      const existing = db.prepare('SELECT productId FROM product_crm_mappings WHERE crmProductIndex = ?').get(item.crmProductIndex) as any;
       if (existing) {
-        throwDuplicateCrmIndexError(normalizedCrmIndex);
+        throwDuplicateCrmIndexError(item.crmProductIndex);
       }
     }
 
     const sortOrder = db.prepare('SELECT COALESCE(MAX(sortOrder), 0) + 1 as nextSort FROM products WHERE categoryId = ?').get(categoryId) as { nextSort: number };
     try {
       db.prepare('INSERT INTO products (id, categoryId, name, isActive, sortOrder, createdAt, updatedAt, hasLamb, hasTwoTeeth, fontSize, crm_product_index) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)')
-        .run(id, categoryId, name, sortOrder.nextSort, now, now, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0, fontSize ? Number(fontSize) : null, normalizedCrmIndex);
+        .run(id, categoryId, name, sortOrder.nextSort, now, now, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0, fontSize ? Number(fontSize) : null, singleMirrorIndex);
+
+      const insertMap = db.prepare(`
+        INSERT INTO product_crm_mappings (id, productId, priceType, variantLabel, crmProductIndex, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const item of desired) {
+        insertMap.run(uuidv4(), id, item.priceType, item.variantLabel, item.crmProductIndex, now, now);
+      }
     } catch (e: any) {
-      if (e?.code === 'SQLITE_CONSTRAINT_UNIQUE' && normalizedCrmIndex !== null) {
-        throwDuplicateCrmIndexError(normalizedCrmIndex);
+      if (e?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        for (const item of desired) {
+          const conflict = db.prepare('SELECT productId FROM product_crm_mappings WHERE crmProductIndex = ?').get(item.crmProductIndex);
+          if (conflict) throwDuplicateCrmIndexError(item.crmProductIndex);
+        }
       }
       throw e;
     }
 
-    return {
-      id,
-      categoryId,
-      name,
-      priceLamb: null,
-      priceTwoTeeth: null,
-      isActive: true,
-      sortOrder: sortOrder.nextSort,
-      createdAt: now,
-      updatedAt: now,
-      hasLamb,
-      hasTwoTeeth,
-      fontSize: fontSize ? Number(fontSize) : null,
-      crmProductIndex: normalizedCrmIndex
-    };
+    return getProductById(id)!;
   });
 
   return tx();
@@ -612,11 +897,13 @@ export function updateProduct(
   hasLamb: boolean = true,
   hasTwoTeeth: boolean = true,
   fontSize: number | null = null,
-  crmProductIndex?: unknown
+  crmInput?: unknown
 ) {
   const now = new Date().toISOString();
-  const hasCrmField = crmProductIndex !== undefined;
-  const normalizedCrmIndex = hasCrmField ? normalizeCrmProductIndex(crmProductIndex) : undefined;
+  const normalizedInput: ProductCrmInput =
+    crmInput && typeof crmInput === 'object' && !Array.isArray(crmInput)
+      ? (crmInput as ProductCrmInput)
+      : { crmProductIndex: crmInput };
 
   const tx = db.transaction(() => {
     const current = db.prepare('SELECT id, crm_product_index FROM products WHERE id = ?').get(id) as any;
@@ -626,21 +913,49 @@ export function updateProduct(
       throw err;
     }
 
-    const finalCrmIndex = hasCrmField ? (normalizedCrmIndex ?? null) : (current.crm_product_index ?? null);
+    const existingMappings = (db.prepare('SELECT * FROM product_crm_mappings WHERE productId = ?').all(id) as any[]).map(m => ({
+      id: m.id,
+      productId: m.productId,
+      priceType: m.priceType as CrmPriceType,
+      variantLabel: m.variantLabel,
+      crmProductIndex: m.crmProductIndex,
+    }));
 
-    if (finalCrmIndex !== null) {
-      const existing = db.prepare('SELECT id, name FROM products WHERE crm_product_index = ? AND id != ?').get(finalCrmIndex, id) as any;
-      if (existing) {
-        throwDuplicateCrmIndexError(finalCrmIndex, id);
+    const { desired, singleMirrorIndex } = resolveDesiredMappingsForProduct(
+      hasLamb,
+      hasTwoTeeth,
+      name,
+      normalizedInput,
+      existingMappings
+    );
+
+    for (const item of desired) {
+      const conflict = db.prepare('SELECT productId FROM product_crm_mappings WHERE crmProductIndex = ? AND productId != ?').get(item.crmProductIndex, id) as any;
+      if (conflict) {
+        throwDuplicateCrmIndexError(item.crmProductIndex, id);
       }
     }
 
     try {
+      // Clear old mappings for this product first so reassigning same indices or changing types is conflict-free
+      db.prepare('DELETE FROM product_crm_mappings WHERE productId = ?').run(id);
+
       db.prepare('UPDATE products SET name = ?, categoryId = ?, updatedAt = ?, hasLamb = ?, hasTwoTeeth = ?, fontSize = ?, crm_product_index = ? WHERE id = ?')
-        .run(name, categoryId, now, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0, fontSize ? Number(fontSize) : null, finalCrmIndex, id);
+        .run(name, categoryId, now, hasLamb ? 1 : 0, hasTwoTeeth ? 1 : 0, fontSize ? Number(fontSize) : null, singleMirrorIndex, id);
+
+      const insertMap = db.prepare(`
+        INSERT INTO product_crm_mappings (id, productId, priceType, variantLabel, crmProductIndex, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const item of desired) {
+        insertMap.run(uuidv4(), id, item.priceType, item.variantLabel, item.crmProductIndex, now, now);
+      }
     } catch (e: any) {
-      if (e?.code === 'SQLITE_CONSTRAINT_UNIQUE' && finalCrmIndex !== null) {
-        throwDuplicateCrmIndexError(finalCrmIndex, id);
+      if (e?.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        for (const item of desired) {
+          const conflict = db.prepare('SELECT productId FROM product_crm_mappings WHERE crmProductIndex = ? AND productId != ?').get(item.crmProductIndex, id);
+          if (conflict) throwDuplicateCrmIndexError(item.crmProductIndex, id);
+        }
       }
       throw e;
     }
@@ -649,74 +964,94 @@ export function updateProduct(
   tx();
 }
 
-export interface PriceChangedProductInfo {
-  id: string;
-  name: string;
-  crmProductIndex: number | null;
-  priceLamb: number | null;
-  priceTwoTeeth: number | null;
-  hasLamb: boolean;
-  hasTwoTeeth: boolean;
+export interface PriceChangedVariantInfo {
+  productId: string;
+  productName: string;
+  priceType: CrmPriceType;
+  variantLabel: string;
+  crmProductIndex: number;
+  rawPrice: number | null;
 }
 
 export function updateProductPrices(
   updates: { id: string; priceLamb: number | null; priceTwoTeeth: number | null }[],
   userId: string
-): { changedProducts: PriceChangedProductInfo[] } {
+): { changedVariants: PriceChangedVariantInfo[] } {
   if (!Array.isArray(updates)) {
     throw new Error('لیست قیمت‌های ارسالی معتبر نیست.');
   }
   const now = new Date().toISOString();
-  
+
   const getProduct = db.prepare('SELECT * FROM products WHERE id = ?');
+  const getMappings = db.prepare('SELECT * FROM product_crm_mappings WHERE productId = ?');
   const updateProductStmt = db.prepare('UPDATE products SET priceLamb = ?, priceTwoTeeth = ?, updatedAt = ? WHERE id = ?');
   const insertHistory = db.prepare('INSERT INTO price_history (id, productId, priceType, oldPrice, newPrice, changedAt, changedBy) VALUES (?, ?, ?, ?, ?, ?, ?)');
   const updateSettingsStmt = db.prepare("UPDATE settings SET value = json_set(value, '$.lastUpdated', ?) WHERE key = 'app_settings'");
 
   let historyAdded = false;
-  const changedProducts: PriceChangedProductInfo[] = [];
+  const changedVariants: PriceChangedVariantInfo[] = [];
 
   const transaction = db.transaction(() => {
     for (const update of updates) {
       const p = getProduct.get(update.id) as any;
       if (!p) continue;
-      
-      let itemChanged = false;
 
-      if (update.priceLamb !== p.priceLamb) {
+      const hasLamb = !!p.hasLamb;
+      const hasTwoTeeth = !!p.hasTwoTeeth;
+      const mappings = getMappings.all(p.id) as Array<{ priceType: CrmPriceType; variantLabel: string; crmProductIndex: number }>;
+
+      const lambChanged = update.priceLamb !== p.priceLamb;
+      const twoTeethChanged = update.priceTwoTeeth !== p.priceTwoTeeth;
+
+      if (lambChanged) {
         insertHistory.run(uuidv4(), update.id, 'lamb', p.priceLamb, update.priceLamb, now, userId);
         historyAdded = true;
-        itemChanged = true;
+
+        const lambSlotType: CrmPriceType | null = !hasLamb && !hasTwoTeeth ? 'single' : (hasLamb ? 'lamb' : null);
+        if (lambSlotType) {
+          const mapEntry = mappings.find(m => m.priceType === lambSlotType);
+          if (mapEntry) {
+            changedVariants.push({
+              productId: p.id,
+              productName: p.name,
+              priceType: mapEntry.priceType,
+              variantLabel: mapEntry.variantLabel || getVariantLabel(mapEntry.priceType),
+              crmProductIndex: mapEntry.crmProductIndex,
+              rawPrice: update.priceLamb ?? null,
+            });
+          }
+        }
       }
-      
-      if (update.priceTwoTeeth !== p.priceTwoTeeth) {
+
+      if (twoTeethChanged) {
         insertHistory.run(uuidv4(), update.id, 'two_teeth', p.priceTwoTeeth, update.priceTwoTeeth, now, userId);
         historyAdded = true;
-        itemChanged = true;
-      }
-      
-      updateProductStmt.run(update.priceLamb, update.priceTwoTeeth, now, update.id);
 
-      if (itemChanged) {
-        changedProducts.push({
-          id: p.id,
-          name: p.name,
-          crmProductIndex: p.crm_product_index ?? null,
-          priceLamb: update.priceLamb ?? null,
-          priceTwoTeeth: update.priceTwoTeeth ?? null,
-          hasLamb: !!p.hasLamb,
-          hasTwoTeeth: !!p.hasTwoTeeth,
-        });
+        if (hasTwoTeeth) {
+          const mapEntry = mappings.find(m => m.priceType === 'two_teeth');
+          if (mapEntry) {
+            changedVariants.push({
+              productId: p.id,
+              productName: p.name,
+              priceType: 'two_teeth',
+              variantLabel: mapEntry.variantLabel || getVariantLabel('two_teeth'),
+              crmProductIndex: mapEntry.crmProductIndex,
+              rawPrice: update.priceTwoTeeth ?? null,
+            });
+          }
+        }
       }
+
+      updateProductStmt.run(update.priceLamb, update.priceTwoTeeth, now, update.id);
     }
-    
+
     if (historyAdded) {
       updateSettingsStmt.run(now);
     }
   });
-  
+
   transaction();
-  return { changedProducts };
+  return { changedVariants };
 }
 
 export function getPriceHistory(): PriceHistory[] {
@@ -781,6 +1116,7 @@ export function restoreBackupData(data: any) {
   const transaction = db.transaction(() => {
     // Clear existing tables
     db.prepare('DELETE FROM price_history').run();
+    db.prepare('DELETE FROM product_crm_mappings').run();
     db.prepare('DELETE FROM products').run();
     db.prepare('DELETE FROM categories').run();
     db.prepare('DELETE FROM settings').run();
@@ -799,10 +1135,25 @@ export function restoreBackupData(data: any) {
       );
     }
     
-    // Insert products
+    // Insert products & CRM mappings
     const insertProduct = db.prepare('INSERT INTO products (id, categoryId, name, priceLamb, priceTwoTeeth, isActive, sortOrder, createdAt, updatedAt, hasLamb, hasTwoTeeth, fontSize, crm_product_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    const insertMapping = db.prepare('INSERT INTO product_crm_mappings (id, productId, priceType, variantLabel, crmProductIndex, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)');
     for (const prod of data.products) {
-      const restoredCrmIdx = prod.crmProductIndex ?? prod.crm_product_index ?? null;
+      const hasLamb = !!prod.hasLamb;
+      const hasTwoTeeth = !!prod.hasTwoTeeth;
+      const { desired, singleMirrorIndex } = resolveDesiredMappingsForProduct(
+        hasLamb,
+        hasTwoTeeth,
+        prod.name,
+        {
+          crmProductIndex: prod.crmProductIndex ?? prod.crm_product_index ?? null,
+          crmLambIndex: prod.crmLambIndex,
+          crmTwoTeethIndex: prod.crmTwoTeethIndex,
+          crmMappings: Array.isArray(prod.crmMappings) ? prod.crmMappings : undefined,
+        }
+      );
+      const createdAt = prod.createdAt || new Date().toISOString();
+      const updatedAt = prod.updatedAt || new Date().toISOString();
       insertProduct.run(
         prod.id, 
         prod.categoryId, 
@@ -811,13 +1162,16 @@ export function restoreBackupData(data: any) {
         prod.priceTwoTeeth ?? null, 
         prod.isActive ? 1 : 0, 
         prod.sortOrder ?? 1, 
-        prod.createdAt || new Date().toISOString(), 
-        prod.updatedAt || new Date().toISOString(),
-        prod.hasLamb ? 1 : 0,
-        prod.hasTwoTeeth ? 1 : 0,
+        createdAt, 
+        updatedAt,
+        hasLamb ? 1 : 0,
+        hasTwoTeeth ? 1 : 0,
         prod.fontSize ? Number(prod.fontSize) : null,
-        restoredCrmIdx !== null ? normalizeCrmProductIndex(restoredCrmIdx) : null
+        singleMirrorIndex
       );
+      for (const m of desired) {
+        insertMapping.run(uuidv4(), prod.id, m.priceType, m.variantLabel, m.crmProductIndex, createdAt, updatedAt);
+      }
     }
     
     // Insert price history
@@ -1275,6 +1629,8 @@ export function createCrmSyncLog(input: {
   batchId?: string | null;
   productId: string | null;
   productName: string;
+  priceType?: CrmPriceType;
+  variantLabel?: string;
   crmProductIndex: number;
   rawPrice: number | null;
   sentPrice: number;
@@ -1287,17 +1643,21 @@ export function createCrmSyncLog(input: {
 }): CrmSyncLog {
   const id = uuidv4();
   const now = new Date().toISOString();
+  const priceType: CrmPriceType = input.priceType || 'single';
+  const variantLabel = input.variantLabel || getVariantLabel(priceType);
   db.prepare(`
     INSERT INTO crm_sync_logs (
-      id, batchId, productId, productName, crmProductIndex, rawPrice, sentPrice,
+      id, batchId, productId, productName, priceType, variantLabel, crmProductIndex, rawPrice, sentPrice,
       currencyUnit, operationType, status, apiResponse, errorMessage, retryCount,
       nextRetryAt, batchSize, updatedCount, triggeredBy, createdAt, sentAt, updatedAt
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, NULL, ?, NULL, ?, ?, NULL, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, 0, NULL, ?, NULL, ?, ?, NULL, ?)
   `).run(
     id,
     input.batchId ?? null,
     input.productId,
     input.productName,
+    priceType,
+    variantLabel,
     input.crmProductIndex,
     input.rawPrice,
     input.sentPrice,
@@ -1317,6 +1677,9 @@ export function createCrmSyncLog(input: {
 export function updateCrmSyncLog(id: string, fields: {
   batchId?: string | null;
   productName?: string;
+  priceType?: CrmPriceType;
+  variantLabel?: string;
+  crmProductIndex?: number;
   rawPrice?: number | null;
   sentPrice?: number;
   currencyUnit?: string | null;
@@ -1338,6 +1701,9 @@ export function updateCrmSyncLog(id: string, fields: {
     UPDATE crm_sync_logs SET
       batchId = ?,
       productName = ?,
+      priceType = ?,
+      variantLabel = ?,
+      crmProductIndex = ?,
       rawPrice = ?,
       sentPrice = ?,
       currencyUnit = ?,
@@ -1356,6 +1722,9 @@ export function updateCrmSyncLog(id: string, fields: {
   `).run(
     fields.batchId !== undefined ? fields.batchId : existing.batchId,
     fields.productName !== undefined ? fields.productName : existing.productName,
+    fields.priceType !== undefined ? fields.priceType : existing.priceType,
+    fields.variantLabel !== undefined ? fields.variantLabel : existing.variantLabel,
+    fields.crmProductIndex !== undefined ? fields.crmProductIndex : existing.crmProductIndex,
     fields.rawPrice !== undefined ? fields.rawPrice : existing.rawPrice,
     fields.sentPrice !== undefined ? fields.sentPrice : existing.sentPrice,
     fields.currencyUnit !== undefined ? fields.currencyUnit : existing.currencyUnit,
@@ -1380,30 +1749,30 @@ export function getCrmSyncLogById(id: string): CrmSyncLog | null {
   return (row as CrmSyncLog) || null;
 }
 
-export function findPendingAutoLogForProduct(productId: string): CrmSyncLog | null {
+export function findPendingAutoLogForProductVariant(productId: string, priceType: CrmPriceType): CrmSyncLog | null {
   const row = db.prepare(`
     SELECT * FROM crm_sync_logs
-    WHERE productId = ? AND operationType = 'auto' AND status = 'pending'
-    ORDER BY createdAt DESC
+    WHERE productId = ? AND priceType = ? AND operationType = 'auto' AND status = 'pending'
+    ORDER BY createdAt DESC, rowid DESC
     LIMIT 1
-  `).get(productId);
+  `).get(productId, priceType);
   return (row as CrmSyncLog) || null;
 }
 
-export function cancelPendingRetriesForProduct(productId: string, exceptLogId?: string) {
+export function cancelPendingRetriesForProductVariant(productId: string, priceType: CrmPriceType, exceptLogId?: string) {
   const now = new Date().toISOString();
   if (exceptLogId) {
     db.prepare(`
       UPDATE crm_sync_logs
       SET nextRetryAt = NULL, updatedAt = ?
-      WHERE productId = ? AND status = 'failed' AND nextRetryAt IS NOT NULL AND id != ?
-    `).run(now, productId, exceptLogId);
+      WHERE productId = ? AND priceType = ? AND status = 'failed' AND nextRetryAt IS NOT NULL AND id != ?
+    `).run(now, productId, priceType, exceptLogId);
   } else {
     db.prepare(`
       UPDATE crm_sync_logs
       SET nextRetryAt = NULL, updatedAt = ?
-      WHERE productId = ? AND status = 'failed' AND nextRetryAt IS NOT NULL
-    `).run(now, productId);
+      WHERE productId = ? AND priceType = ? AND status = 'failed' AND nextRetryAt IS NOT NULL
+    `).run(now, productId, priceType);
   }
 }
 
@@ -1449,7 +1818,7 @@ export function getCrmSyncLogs(filters?: {
   const items = db.prepare(`
     SELECT * FROM crm_sync_logs
     ${whereClause}
-    ORDER BY createdAt DESC
+    ORDER BY createdAt DESC, rowid DESC
     LIMIT ? OFFSET ?
   `).all(...params, limit, offset) as CrmSyncLog[];
 
@@ -1458,17 +1827,18 @@ export function getCrmSyncLogs(filters?: {
 
 export function getDueRetryCrmLogs(maxRetries: number): CrmSyncLog[] {
   const now = new Date().toISOString();
-  // Only pick the latest failed log per product that is still due for retry
+  // Pick the latest failed log per (productId, priceType) that is still due for retry
   return db.prepare(`
     SELECT l.*
     FROM crm_sync_logs l
-    INNER JOIN (
-      SELECT productId, MAX(createdAt) as maxCreated
-      FROM crm_sync_logs
-      WHERE productId IS NOT NULL
-      GROUP BY productId
-    ) latest ON l.productId = latest.productId AND l.createdAt = latest.maxCreated
-    WHERE l.status = 'failed'
+    WHERE l.productId IS NOT NULL
+      AND l.id = (
+        SELECT l2.id FROM crm_sync_logs l2
+        WHERE l2.productId = l.productId AND l2.priceType = l.priceType
+        ORDER BY l2.createdAt DESC, l2.rowid DESC
+        LIMIT 1
+      )
+      AND l.status = 'failed'
       AND l.retryCount < ?
       AND l.nextRetryAt IS NOT NULL
       AND l.nextRetryAt <= ?
@@ -1480,13 +1850,14 @@ export function getLatestFailedOrReviewLogs(): CrmSyncLog[] {
   return db.prepare(`
     SELECT l.*
     FROM crm_sync_logs l
-    INNER JOIN (
-      SELECT productId, MAX(createdAt) as maxCreated
-      FROM crm_sync_logs
-      WHERE productId IS NOT NULL
-      GROUP BY productId
-    ) latest ON l.productId = latest.productId AND l.createdAt = latest.maxCreated
-    WHERE l.status IN ('failed', 'needs_review')
+    WHERE l.productId IS NOT NULL
+      AND l.id = (
+        SELECT l2.id FROM crm_sync_logs l2
+        WHERE l2.productId = l.productId AND l2.priceType = l.priceType
+        ORDER BY l2.createdAt DESC, l2.rowid DESC
+        LIMIT 1
+      )
+      AND l.status IN ('failed', 'needs_review')
     ORDER BY l.createdAt ASC
   `).all() as CrmSyncLog[];
 }
@@ -1501,21 +1872,21 @@ export function getPendingCrmLogs(): CrmSyncLog[] {
 
 export function getCrmSyncStats() {
   const totalProducts = (db.prepare('SELECT count(*) as c FROM products').get() as any).c;
-  const withCrmIndex = (db.prepare('SELECT count(*) as c FROM products WHERE crm_product_index IS NOT NULL').get() as any).c;
+  const withCrmIndex = (db.prepare('SELECT count(DISTINCT productId) as c FROM product_crm_mappings').get() as any).c;
   const withoutCrmIndex = totalProducts - withCrmIndex;
+  const totalMappingsCount = (db.prepare('SELECT count(*) as c FROM product_crm_mappings').get() as any).c;
 
-  // Latest sync log status per connected product
+  // Latest sync log status per connected variant mapping
   const latestRows = db.prepare(`
-    SELECT p.id as productId, l.status as lastStatus
-    FROM products p
+    SELECT m.productId, m.priceType, m.crmProductIndex, l.status as lastStatus
+    FROM product_crm_mappings m
     LEFT JOIN crm_sync_logs l ON l.id = (
-      SELECT id FROM crm_sync_logs
-      WHERE productId = p.id
-      ORDER BY createdAt DESC
+      SELECT l2.id FROM crm_sync_logs l2
+      WHERE l2.productId = m.productId AND l2.priceType = m.priceType
+      ORDER BY l2.createdAt DESC, l2.rowid DESC
       LIMIT 1
     )
-    WHERE p.crm_product_index IS NOT NULL
-  `).all() as { productId: string; lastStatus: CrmSyncStatus | null }[];
+  `).all() as { productId: string; priceType: CrmPriceType; crmProductIndex: number; lastStatus: CrmSyncStatus | null }[];
 
   let syncedProductsCount = 0;
   let unsyncedProductsCount = 0;
@@ -1547,6 +1918,7 @@ export function getCrmSyncStats() {
     totalProducts,
     withCrmIndex,
     withoutCrmIndex,
+    totalMappingsCount,
     syncedProductsCount,
     unsyncedProductsCount,
     failedProductsCount,

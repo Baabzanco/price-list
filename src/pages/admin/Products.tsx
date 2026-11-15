@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { useDB } from '../../lib/useDB';
-import { db, Category } from '../../lib/db';
+import { db, Category, Product, CrmPriceType, ProductCrmMapping } from '../../lib/db';
 import { CheckCircle2, AlertCircle, Eye, EyeOff, Plus, Trash2, Search, Edit2, Save, X, GripVertical, Type, Minus, RotateCcw, Link2, Unlink } from 'lucide-react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { cn } from '../../lib/utils';
+import { cn, formatNumber } from '../../lib/utils';
 
 function parseCrmIndexInput(raw: string): { valid: boolean; value: number | null; error?: string } {
   const normalized = raw
@@ -24,6 +24,24 @@ function parseCrmIndexInput(raw: string): { valid: boolean; value: number | null
   }
   return { valid: true, value: num };
 }
+
+function getVariantLabelFa(priceType: CrmPriceType): string {
+  if (priceType === 'lamb') return 'بره';
+  if (priceType === 'two_teeth') return 'دودندان';
+  return 'قیمت واحد';
+}
+
+function hasAnyCrmMapping(p: Product): boolean {
+  return (p.crmMappings && p.crmMappings.length > 0) || p.crmProductIndex != null;
+}
+
+const SYNC_DOT_STYLES: Record<string, { dot: string; title: string }> = {
+  success: { dot: 'bg-emerald-500', title: 'آخرین همگام‌سازی موفق' },
+  failed: { dot: 'bg-rose-500', title: 'آخرین همگام‌سازی ناموفق' },
+  needs_review: { dot: 'bg-amber-500', title: 'نیازمند بررسی' },
+  pending: { dot: 'bg-slate-400', title: 'در انتظار ارسال' },
+  sending: { dot: 'bg-blue-500 animate-pulse', title: 'در حال ارسال' },
+};
 
 function SortableRow({ product, category, isEditing, editForm, setEditForm, editError, saveEdit, startEdit, toggleVisibility, removeProduct, setEditingId, orderedCategories, isFilterActive }: any) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: product.id });
@@ -215,46 +233,155 @@ function SortableRow({ product, category, isEditing, editForm, setEditForm, edit
       </td>
       <td className="px-6 py-4">
         {isEditing ? (
-          <div className="space-y-1.5 min-w-[150px]">
-            <div className="flex items-center gap-1.5">
-              <input
-                type="text"
-                inputMode="numeric"
-                value={editForm.crmProductIndex}
-                onChange={e => setEditForm({ ...editForm, crmProductIndex: e.target.value })}
-                className={cn(
-                  "w-full px-3 py-1.5 rounded-lg border bg-white dark:bg-surface-800 dark:text-white focus:outline-none focus:ring-2 font-mono text-sm text-left",
-                  editError ? "border-rose-400 focus:ring-rose-200" : "border-surface-200 dark:border-surface-700 focus:ring-primary/20"
-                )}
-                placeholder="اختیاری (مثلاً 46)"
-                dir="ltr"
-              />
-              {editForm.crmProductIndex !== '' && (
-                <button
-                  type="button"
-                  onClick={() => setEditForm({ ...editForm, crmProductIndex: '' })}
-                  className="p-1.5 text-surface-400 hover:text-rose-500 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800"
-                  title="حذف شاخص CRM"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+          editForm.hasLamb && editForm.hasTwoTeeth ? (
+            <div className="space-y-2 min-w-[240px]">
+              <div className="rounded-xl border border-surface-200 dark:border-surface-700 overflow-hidden bg-white dark:bg-surface-900">
+                <table className="w-full text-xs">
+                  <thead className="bg-surface-50 dark:bg-surface-800 text-surface-500 dark:text-surface-400">
+                    <tr>
+                      <th className="px-2.5 py-1.5 font-medium text-right">نوع</th>
+                      <th className="px-2.5 py-1.5 font-medium text-right">شاخص CRM</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-surface-100 dark:divide-surface-800">
+                    <tr>
+                      <td className="px-2.5 py-1.5 font-bold text-surface-700 dark:text-surface-300 whitespace-nowrap">بره</td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={editForm.crmLambIndex}
+                            onChange={e => setEditForm({ ...editForm, crmLambIndex: e.target.value })}
+                            className={cn(
+                              "w-24 px-2.5 py-1 rounded-lg border bg-white dark:bg-surface-800 dark:text-white focus:outline-none focus:ring-2 font-mono text-xs text-left",
+                              editError ? "border-rose-400 focus:ring-rose-200" : "border-surface-200 dark:border-surface-700 focus:ring-primary/20"
+                            )}
+                            placeholder="مثلاً 47"
+                            dir="ltr"
+                          />
+                          {editForm.crmLambIndex !== '' && (
+                            <button
+                              type="button"
+                              onClick={() => setEditForm({ ...editForm, crmLambIndex: '' })}
+                              className="p-1 text-surface-400 hover:text-rose-500 rounded hover:bg-surface-100 dark:hover:bg-surface-800"
+                              title="حذف شاخص بره"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-2.5 py-1.5 font-bold text-surface-700 dark:text-surface-300 whitespace-nowrap">دودندان</td>
+                      <td className="px-2 py-1.5">
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={editForm.crmTwoTeethIndex}
+                            onChange={e => setEditForm({ ...editForm, crmTwoTeethIndex: e.target.value })}
+                            className={cn(
+                              "w-24 px-2.5 py-1 rounded-lg border bg-white dark:bg-surface-800 dark:text-white focus:outline-none focus:ring-2 font-mono text-xs text-left",
+                              editError ? "border-rose-400 focus:ring-rose-200" : "border-surface-200 dark:border-surface-700 focus:ring-primary/20"
+                            )}
+                            placeholder="مثلاً 108"
+                            dir="ltr"
+                          />
+                          {editForm.crmTwoTeethIndex !== '' && (
+                            <button
+                              type="button"
+                              onClick={() => setEditForm({ ...editForm, crmTwoTeethIndex: '' })}
+                              className="p-1 text-surface-400 hover:text-rose-500 rounded hover:bg-surface-100 dark:hover:bg-surface-800"
+                              title="حذف شاخص دودندان"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              {editError && (
+                <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400 leading-snug">{editError}</p>
               )}
             </div>
-            {editError && (
-              <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400 leading-snug">{editError}</p>
-            )}
+          ) : (
+            <div className="space-y-1.5 min-w-[150px]">
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={editForm.crmSingleIndex}
+                  onChange={e => setEditForm({ ...editForm, crmSingleIndex: e.target.value })}
+                  className={cn(
+                    "w-full px-3 py-1.5 rounded-lg border bg-white dark:bg-surface-800 dark:text-white focus:outline-none focus:ring-2 font-mono text-sm text-left",
+                    editError ? "border-rose-400 focus:ring-rose-200" : "border-surface-200 dark:border-surface-700 focus:ring-primary/20"
+                  )}
+                  placeholder="اختیاری (مثلاً 46)"
+                  dir="ltr"
+                />
+                {editForm.crmSingleIndex !== '' && (
+                  <button
+                    type="button"
+                    onClick={() => setEditForm({ ...editForm, crmSingleIndex: '' })}
+                    className="p-1.5 text-surface-400 hover:text-rose-500 rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800"
+                    title="حذف شاخص CRM"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              {editError && (
+                <p className="text-[11px] font-medium text-rose-600 dark:text-rose-400 leading-snug">{editError}</p>
+              )}
+            </div>
+          )
+        ) : product.hasLamb && product.hasTwoTeeth ? (
+          <div className="flex flex-col gap-1.5">
+            {(['lamb', 'two_teeth'] as CrmPriceType[]).map(pt => {
+              const mapping: ProductCrmMapping | undefined = (product.crmMappings || []).find((m: ProductCrmMapping) => m.priceType === pt);
+              const syncDot = mapping?.lastSyncStatus ? SYNC_DOT_STYLES[mapping.lastSyncStatus] : null;
+              return (
+                <div key={pt} className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-surface-500 dark:text-surface-400 w-12 shrink-0">
+                    {getVariantLabelFa(pt)}:
+                  </span>
+                  {mapping ? (
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/50" dir="ltr">
+                      <Link2 className="w-3 h-3" />
+                      #{mapping.crmProductIndex}
+                      {syncDot && <span className={cn('w-1.5 h-1.5 rounded-full', syncDot.dot)} title={syncDot.title} />}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] bg-surface-100 text-surface-400 dark:bg-surface-800 dark:text-surface-500">
+                      ثبت نشده
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        ) : product.crmProductIndex ? (
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/50" dir="ltr">
-            <Link2 className="w-3.5 h-3.5" />
-            #{product.crmProductIndex}
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-surface-100 text-surface-500 dark:bg-surface-800 dark:text-surface-400">
-            <Unlink className="w-3 h-3" />
-            ثبت نشده
-          </span>
-        )}
+        ) : (() => {
+          const singleMapping: ProductCrmMapping | undefined = (product.crmMappings || [])[0];
+          const idx = singleMapping?.crmProductIndex ?? product.crmProductIndex;
+          const syncDot = singleMapping?.lastSyncStatus ? SYNC_DOT_STYLES[singleMapping.lastSyncStatus] : null;
+          return idx ? (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-900/50" dir="ltr">
+              <Link2 className="w-3.5 h-3.5" />
+              #{idx}
+              {syncDot && <span className={cn('w-1.5 h-1.5 rounded-full', syncDot.dot)} title={syncDot.title} />}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs bg-surface-100 text-surface-500 dark:bg-surface-800 dark:text-surface-400">
+              <Unlink className="w-3 h-3" />
+              ثبت نشده
+            </span>
+          );
+        })()}
       </td>
       <td className="px-6 py-4">
         <div className="flex items-center justify-end gap-2">
@@ -287,6 +414,8 @@ export function Products() {
   const [newHasTwoTeeth, setNewHasTwoTeeth] = useState(true);
   const [newFontSize, setNewFontSize] = useState<number | null>(null);
   const [newCrmIndex, setNewCrmIndex] = useState('');
+  const [newCrmLambIndex, setNewCrmLambIndex] = useState('');
+  const [newCrmTwoTeethIndex, setNewCrmTwoTeethIndex] = useState('');
   const [addFormError, setAddFormError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [crmFilter, setCrmFilter] = useState<'all' | 'connected' | 'unconnected'>('all');
@@ -298,8 +427,10 @@ export function Products() {
     hasLamb: boolean, 
     hasTwoTeeth: boolean,
     fontSize: number | null,
-    crmProductIndex: string
-  }>({ name: '', categoryId: '', hasLamb: true, hasTwoTeeth: true, fontSize: null, crmProductIndex: '' });
+    crmSingleIndex: string,
+    crmLambIndex: string,
+    crmTwoTeethIndex: string,
+  }>({ name: '', categoryId: '', hasLamb: true, hasTwoTeeth: true, fontSize: null, crmSingleIndex: '', crmLambIndex: '', crmTwoTeethIndex: '' });
   const [editError, setEditError] = useState<string | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -307,22 +438,58 @@ export function Products() {
     setTimeout(() => setToast(null), 5000);
   };
 
-  const validateCrmIndexUniqueness = (rawVal: string, excludeProductId?: string): { ok: boolean; value: number | null; error?: string } => {
-    const parsed = parseCrmIndexInput(rawVal);
-    if (!parsed.valid) {
-      return { ok: false, value: null, error: parsed.error };
-    }
-    if (parsed.value !== null) {
-      const conflict = products.find(p => p.crmProductIndex === parsed.value && p.id !== excludeProductId);
-      if (conflict) {
+  const validateVariantMappingsUniqueness = (
+    entries: Array<{ priceType: CrmPriceType; variantLabel: string; rawValue: string }>,
+    currentProductName: string,
+    excludeProductId?: string
+  ): { ok: boolean; mappings: ProductCrmMapping[]; error?: string } => {
+    const parsedMappings: ProductCrmMapping[] = [];
+    const seenInSameProduct = new Map<number, string>();
+
+    for (const entry of entries) {
+      const parsed = parseCrmIndexInput(entry.rawValue);
+      if (!parsed.valid) {
+        return { ok: false, mappings: [], error: parsed.error };
+      }
+      if (parsed.value === null) continue;
+
+      const duplicateSelfLabel = seenInSameProduct.get(parsed.value);
+      if (duplicateSelfLabel) {
         return {
           ok: false,
-          value: null,
-          error: `این شاخص CRM قبلاً برای محصول ${conflict.name} ثبت شده است. لطفاً شاخص دیگری وارد کنید.`
+          mappings: [],
+          error: `شاخص CRM (${parsed.value}) نمی‌تواند هم‌زمان برای دو نوع «${duplicateSelfLabel}» و «${entry.variantLabel}» در محصول «${currentProductName || 'جدید'}» یکسان باشد.`
         };
       }
+      seenInSameProduct.set(parsed.value, entry.variantLabel);
+
+      // Check against all existing products & their variants globally
+      for (const p of products) {
+        if (p.id === excludeProductId) continue;
+        const pMappings = p.crmMappings && p.crmMappings.length > 0
+          ? p.crmMappings
+          : (p.crmProductIndex != null
+              ? [{ priceType: 'single' as CrmPriceType, variantLabel: 'قیمت واحد', crmProductIndex: p.crmProductIndex }]
+              : []);
+        const conflictMap = pMappings.find(m => m.crmProductIndex === parsed.value);
+        if (conflictMap) {
+          const conflictTypeLabel = conflictMap.variantLabel || getVariantLabelFa(conflictMap.priceType);
+          return {
+            ok: false,
+            mappings: [],
+            error: `این شاخص CRM (${parsed.value}) قبلاً برای محصول «${p.name}» (نوع: ${conflictTypeLabel}) ثبت شده است. لطفاً شاخص دیگری وارد کنید.`
+          };
+        }
+      }
+
+      parsedMappings.push({
+        priceType: entry.priceType,
+        variantLabel: entry.variantLabel,
+        crmProductIndex: parsed.value,
+      });
     }
-    return { ok: true, value: parsed.value };
+
+    return { ok: true, mappings: parsedMappings };
   };
 
   const handleAddProduct = async (e: React.FormEvent) => {
@@ -330,7 +497,21 @@ export function Products() {
     setAddFormError(null);
     if (!newProductName.trim() || !selectedCategory) return;
 
-    const crmCheck = validateCrmIndexUniqueness(newCrmIndex);
+    const isMultiType = newHasLamb && newHasTwoTeeth;
+    const candidateEntries: Array<{ priceType: CrmPriceType; variantLabel: string; rawValue: string }> = isMultiType
+      ? [
+          { priceType: 'lamb', variantLabel: 'بره', rawValue: newCrmLambIndex },
+          { priceType: 'two_teeth', variantLabel: 'دودندان', rawValue: newCrmTwoTeethIndex },
+        ]
+      : [
+          {
+            priceType: !newHasLamb && !newHasTwoTeeth ? 'single' : newHasLamb ? 'lamb' : 'two_teeth',
+            variantLabel: !newHasLamb && !newHasTwoTeeth ? 'قیمت واحد' : newHasLamb ? 'بره' : 'دودندان',
+            rawValue: newCrmIndex,
+          },
+        ];
+
+    const crmCheck = validateVariantMappingsUniqueness(candidateEntries, newProductName.trim());
     if (!crmCheck.ok) {
       setAddFormError(crmCheck.error || 'شاخص CRM نامعتبر است.');
       showToast(crmCheck.error || 'شاخص CRM نامعتبر است.', 'error');
@@ -338,12 +519,16 @@ export function Products() {
     }
 
     try {
-      await db.addProduct(selectedCategory, newProductName.trim(), newHasLamb, newHasTwoTeeth, newFontSize, crmCheck.value);
+      await db.addProduct(selectedCategory, newProductName.trim(), newHasLamb, newHasTwoTeeth, newFontSize, {
+        crmMappings: crmCheck.mappings,
+      });
       setNewProductName('');
       setNewHasLamb(true);
       setNewHasTwoTeeth(true);
       setNewFontSize(null);
       setNewCrmIndex('');
+      setNewCrmLambIndex('');
+      setNewCrmTwoTeethIndex('');
       setAddFormError(null);
       showToast('محصول جدید با موفقیت اضافه شد.');
     } catch (error: any) {
@@ -373,16 +558,23 @@ export function Products() {
     }
   };
 
-  const startEdit = (p: any) => {
+  const startEdit = (p: Product) => {
     setEditingId(p.id);
     setEditError(null);
+    const mappings = p.crmMappings || [];
+    const lambIdx = p.crmLambIndex ?? mappings.find(m => m.priceType === 'lamb')?.crmProductIndex ?? null;
+    const twoTeethIdx = p.crmTwoTeethIndex ?? mappings.find(m => m.priceType === 'two_teeth')?.crmProductIndex ?? null;
+    const singleIdx = p.crmProductIndex ?? mappings[0]?.crmProductIndex ?? null;
+
     setEditForm({ 
       name: p.name, 
       categoryId: p.categoryId, 
       hasLamb: p.hasLamb ?? true, 
       hasTwoTeeth: p.hasTwoTeeth ?? true,
       fontSize: p.fontSize ?? null,
-      crmProductIndex: p.crmProductIndex != null ? String(p.crmProductIndex) : ''
+      crmSingleIndex: singleIdx != null ? String(singleIdx) : '',
+      crmLambIndex: lambIdx != null ? String(lambIdx) : '',
+      crmTwoTeethIndex: twoTeethIdx != null ? String(twoTeethIdx) : '',
     });
   };
 
@@ -390,7 +582,21 @@ export function Products() {
     setEditError(null);
     if (!editForm.name.trim() || !editForm.categoryId) return;
 
-    const crmCheck = validateCrmIndexUniqueness(editForm.crmProductIndex, id);
+    const isMultiType = editForm.hasLamb && editForm.hasTwoTeeth;
+    const candidateEntries: Array<{ priceType: CrmPriceType; variantLabel: string; rawValue: string }> = isMultiType
+      ? [
+          { priceType: 'lamb', variantLabel: 'بره', rawValue: editForm.crmLambIndex },
+          { priceType: 'two_teeth', variantLabel: 'دودندان', rawValue: editForm.crmTwoTeethIndex },
+        ]
+      : [
+          {
+            priceType: !editForm.hasLamb && !editForm.hasTwoTeeth ? 'single' : editForm.hasLamb ? 'lamb' : 'two_teeth',
+            variantLabel: !editForm.hasLamb && !editForm.hasTwoTeeth ? 'قیمت واحد' : editForm.hasLamb ? 'بره' : 'دودندان',
+            rawValue: editForm.crmSingleIndex,
+          },
+        ];
+
+    const crmCheck = validateVariantMappingsUniqueness(candidateEntries, editForm.name.trim(), id);
     if (!crmCheck.ok) {
       setEditError(crmCheck.error || 'شاخص CRM نامعتبر است.');
       showToast(crmCheck.error || 'شاخص CRM نامعتبر است.', 'error');
@@ -398,7 +604,9 @@ export function Products() {
     }
 
     try {
-      await db.updateProduct(id, editForm.name.trim(), editForm.categoryId, editForm.hasLamb, editForm.hasTwoTeeth, editForm.fontSize, crmCheck.value);
+      await db.updateProduct(id, editForm.name.trim(), editForm.categoryId, editForm.hasLamb, editForm.hasTwoTeeth, editForm.fontSize, {
+        crmMappings: crmCheck.mappings,
+      });
       showToast('محصول با موفقیت ویرایش شد.');
       setEditError(null);
       setEditingId(null);
@@ -438,12 +646,17 @@ export function Products() {
 
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
-      if (crmFilter === 'connected' && !p.crmProductIndex) return false;
-      if (crmFilter === 'unconnected' && p.crmProductIndex) return false;
+      const connected = hasAnyCrmMapping(p);
+      if (crmFilter === 'connected' && !connected) return false;
+      if (crmFilter === 'unconnected' && connected) return false;
       if (!searchQuery.trim()) return true;
       const q = searchQuery.trim();
+      const matchesMapping = (p.crmMappings || []).some(
+        m => String(m.crmProductIndex).includes(q) || m.variantLabel.includes(q)
+      );
       return (
         p.name.includes(q) ||
+        matchesMapping ||
         (p.crmProductIndex != null && String(p.crmProductIndex).includes(q)) ||
         categories.find(c => c.id === p.categoryId)?.name.includes(q)
       );
@@ -457,7 +670,7 @@ export function Products() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-surface-900 dark:text-white">مدیریت اقلام</h2>
-          <p className="text-surface-600 dark:text-surface-400 mt-1">افزودن، ویرایش، حذف اقلام و تعیین شاخص محصول در CRM.</p>
+          <p className="text-surface-600 dark:text-surface-400 mt-1">افزودن، ویرایش، حذف اقلام و تعیین شاخص محصول در CRM (تکی و چندنوعی).</p>
         </div>
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full sm:w-auto">
           <select
@@ -465,9 +678,9 @@ export function Products() {
             onChange={(e) => setCrmFilter(e.target.value as any)}
             className="px-3 py-2 rounded-xl border border-surface-200 bg-white dark:bg-surface-800 dark:border-surface-700 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
           >
-            <option value="all">همه اقلام ({products.length})</option>
-            <option value="connected">متصل به CRM ({products.filter(p => p.crmProductIndex != null).length})</option>
-            <option value="unconnected">بدون شاخص CRM ({products.filter(p => p.crmProductIndex == null).length})</option>
+            <option value="all">همه اقلام ({formatNumber(products.length)})</option>
+            <option value="connected">متصل به CRM ({formatNumber(products.filter(hasAnyCrmMapping).length)})</option>
+            <option value="unconnected">بدون شاخص CRM ({formatNumber(products.filter(p => !hasAnyCrmMapping(p)).length)})</option>
           </select>
           <div className="relative w-full sm:w-64">
             <input
@@ -520,27 +733,29 @@ export function Products() {
               ))}
             </select>
           </div>
-          <div className="w-full lg:w-44 space-y-1.5">
-            <label className="text-sm font-medium text-surface-700 dark:text-surface-300 flex items-center gap-1">
-              <Link2 className="w-3.5 h-3.5 text-primary" />
-              شاخص محصول در CRM
-            </label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={newCrmIndex}
-              onChange={e => {
-                setNewCrmIndex(e.target.value);
-                if (addFormError) setAddFormError(null);
-              }}
-              className={cn(
-                "w-full px-3.5 py-2.5 rounded-xl border bg-surface-50 dark:bg-surface-800 dark:text-white focus:bg-white focus:outline-none focus:ring-2 font-mono text-sm text-left",
-                addFormError ? "border-rose-400 focus:ring-rose-200" : "border-surface-200 dark:border-surface-700 focus:ring-primary/20"
-              )}
-              placeholder="اختیاری (مثلاً 46)"
-              dir="ltr"
-            />
-          </div>
+          {!(newHasLamb && newHasTwoTeeth) && (
+            <div className="w-full lg:w-44 space-y-1.5">
+              <label className="text-sm font-medium text-surface-700 dark:text-surface-300 flex items-center gap-1">
+                <Link2 className="w-3.5 h-3.5 text-primary" />
+                شاخص محصول در CRM
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={newCrmIndex}
+                onChange={e => {
+                  setNewCrmIndex(e.target.value);
+                  if (addFormError) setAddFormError(null);
+                }}
+                className={cn(
+                  "w-full px-3.5 py-2.5 rounded-xl border bg-surface-50 dark:bg-surface-800 dark:text-white focus:bg-white focus:outline-none focus:ring-2 font-mono text-sm text-left",
+                  addFormError ? "border-rose-400 focus:ring-rose-200" : "border-surface-200 dark:border-surface-700 focus:ring-primary/20"
+                )}
+                placeholder="اختیاری (مثلاً 46)"
+                dir="ltr"
+              />
+            </div>
+          )}
           <div className="w-full lg:w-36 space-y-1.5">
             <label className="text-sm font-medium text-surface-700 dark:text-surface-300 flex items-center gap-1">
               <Type className="w-3.5 h-3.5 text-primary" />
@@ -564,11 +779,27 @@ export function Products() {
           </div>
           <div className="flex gap-4 items-center h-[46px] px-2 w-full lg:w-auto">
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={newHasLamb} onChange={e => setNewHasLamb(e.target.checked)} className="w-4 h-4 rounded text-primary focus:ring-primary/20 bg-white border-surface-300 dark:border-surface-600 dark:bg-surface-800" />
+              <input
+                type="checkbox"
+                checked={newHasLamb}
+                onChange={e => {
+                  setNewHasLamb(e.target.checked);
+                  if (addFormError) setAddFormError(null);
+                }}
+                className="w-4 h-4 rounded text-primary focus:ring-primary/20 bg-white border-surface-300 dark:border-surface-600 dark:bg-surface-800"
+              />
               <span className="text-sm font-medium text-surface-700 dark:text-surface-300 whitespace-nowrap">قیمت بره</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={newHasTwoTeeth} onChange={e => setNewHasTwoTeeth(e.target.checked)} className="w-4 h-4 rounded text-primary focus:ring-primary/20 bg-white border-surface-300 dark:border-surface-600 dark:bg-surface-800" />
+              <input
+                type="checkbox"
+                checked={newHasTwoTeeth}
+                onChange={e => {
+                  setNewHasTwoTeeth(e.target.checked);
+                  if (addFormError) setAddFormError(null);
+                }}
+                className="w-4 h-4 rounded text-primary focus:ring-primary/20 bg-white border-surface-300 dark:border-surface-600 dark:bg-surface-800"
+              />
               <span className="text-sm font-medium text-surface-700 dark:text-surface-300 whitespace-nowrap">قیمت دودندان</span>
             </label>
           </div>
@@ -580,6 +811,67 @@ export function Products() {
             <span>افزودن</span>
           </button>
         </div>
+
+        {/* Dedicated CRM Index Table when product has multiple price types (lamb & two_teeth) */}
+        {newHasLamb && newHasTwoTeeth && (
+          <div className="rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50/70 dark:bg-surface-800/40 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-surface-200 dark:border-surface-700 flex items-center justify-between">
+              <span className="text-xs font-bold text-surface-700 dark:text-surface-300 flex items-center gap-1.5">
+                <Link2 className="w-3.5 h-3.5 text-primary" />
+                شاخص CRM برای انواع قیمتی این محصول (هر نوع دارای شاخص مستقل و یکتا است)
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-right text-xs">
+                <thead className="bg-surface-100/70 dark:bg-surface-800 text-surface-600 dark:text-surface-400">
+                  <tr>
+                    <th className="px-4 py-2 font-medium">نوع محصول</th>
+                    <th className="px-4 py-2 font-medium">ستون قیمت مرتبط</th>
+                    <th className="px-4 py-2 font-medium">شاخص CRM (اختیاری)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-surface-200 dark:divide-surface-700">
+                  <tr>
+                    <td className="px-4 py-2.5 font-bold text-surface-800 dark:text-surface-200">بره</td>
+                    <td className="px-4 py-2.5 text-surface-500 dark:text-surface-400">قیمت بره</td>
+                    <td className="px-4 py-2.5">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={newCrmLambIndex}
+                        onChange={e => {
+                          setNewCrmLambIndex(e.target.value);
+                          if (addFormError) setAddFormError(null);
+                        }}
+                        className="w-44 px-3 py-1.5 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 dark:text-white font-mono text-xs text-left focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        placeholder="مثلاً 47"
+                        dir="ltr"
+                      />
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="px-4 py-2.5 font-bold text-surface-800 dark:text-surface-200">دودندان</td>
+                    <td className="px-4 py-2.5 text-surface-500 dark:text-surface-400">قیمت دودندان</td>
+                    <td className="px-4 py-2.5">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={newCrmTwoTeethIndex}
+                        onChange={e => {
+                          setNewCrmTwoTeethIndex(e.target.value);
+                          if (addFormError) setAddFormError(null);
+                        }}
+                        className="w-44 px-3 py-1.5 rounded-lg border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 dark:text-white font-mono text-xs text-left focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        placeholder="مثلاً 108"
+                        dir="ltr"
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {addFormError && (
           <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 text-rose-700 dark:text-rose-300 text-xs font-medium flex items-center gap-2">

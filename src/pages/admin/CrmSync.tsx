@@ -379,6 +379,9 @@ export function CrmSync() {
             </p>
             <p className="text-[11px] text-surface-400 mt-0.5">
               از مجموع {stats ? formatNumber(stats.totalProducts) : '—'} محصول
+              {stats?.totalMappingsCount != null && stats.totalMappingsCount > 0
+                ? ` (${formatNumber(stats.totalMappingsCount)} نوع/شاخص متصل)`
+                : ''}
             </p>
           </div>
         </div>
@@ -497,12 +500,17 @@ export function CrmSync() {
               >
                 <option value="all">همه محصولات</option>
                 {products
-                  .filter(p => p.crmProductIndex != null)
-                  .map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} (#{p.crmProductIndex})
-                    </option>
-                  ))}
+                  .filter(p => (p.crmMappings && p.crmMappings.length > 0) || p.crmProductIndex != null)
+                  .map(p => {
+                    const indicesLabel = p.crmMappings && p.crmMappings.length > 0
+                      ? p.crmMappings.map(m => `${m.variantLabel}: #${m.crmProductIndex}`).join(' | ')
+                      : `#${p.crmProductIndex}`;
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({indicesLabel})
+                      </option>
+                    );
+                  })}
               </select>
             </div>
 
@@ -618,8 +626,15 @@ export function CrmSync() {
                         <tr key={log.id} className="hover:bg-surface-50/40 dark:hover:bg-surface-800/40">
                           <td className="px-4 py-3.5">
                             <div className="font-bold text-surface-900 dark:text-white">{log.productName}</div>
-                            <div className="text-xs font-mono text-surface-500 mt-0.5" dir="ltr" style={{ textAlign: 'right' }}>
-                              CRM #{log.crmProductIndex}
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              {log.variantLabel && (
+                                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary dark:text-primary-hover text-[10px] font-bold">
+                                  {log.variantLabel}
+                                </span>
+                              )}
+                              <span className="text-xs font-mono text-surface-500" dir="ltr">
+                                CRM #{log.crmProductIndex}
+                              </span>
                             </div>
                           </td>
                           <td className="px-4 py-3.5">
@@ -1016,15 +1031,17 @@ export function CrmSync() {
 
               <div className="bg-surface-50 dark:bg-surface-800/60 rounded-xl p-4 space-y-2 text-sm border border-surface-200 dark:border-surface-700">
                 <div className="flex justify-between">
-                  <span className="text-surface-500">محصولات واجد شرایط ارسال:</span>
-                  <span className="font-black text-primary dark:text-white">{formatNumber(bulkPreview.eligibleCount)} محصول</span>
+                  <span className="text-surface-500">اقلام / انواع واجد شرایط ارسال:</span>
+                  <span className="font-black text-primary dark:text-white">
+                    {formatNumber(bulkPreview.eligibleCount)} مورد (از {formatNumber(bulkPreview.withCrmIndex)} محصول)
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-surface-500">دارای شاخص ولی بدون قیمت:</span>
-                  <span className="font-bold text-surface-700 dark:text-surface-300">{formatNumber(bulkPreview.missingPriceWithIndexCount)} محصول</span>
+                  <span className="font-bold text-surface-700 dark:text-surface-300">{formatNumber(bulkPreview.missingPriceWithIndexCount)} مورد</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-surface-500">فاقد شاخص CRM (ارسال نمی‌شوند):</span>
+                  <span className="text-surface-500">محصولات فاقد شاخص CRM:</span>
                   <span className="font-bold text-surface-700 dark:text-surface-300">{formatNumber(bulkPreview.withoutCrmIndex)} محصول</span>
                 </div>
                 <div className="flex justify-between">
@@ -1084,10 +1101,11 @@ export function CrmSync() {
             <div className="p-6 space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-2 bg-surface-50 dark:bg-surface-800/60 p-3.5 rounded-xl">
                 <div><span className="text-surface-500">محصول:</span> <strong>{selectedLogDetail.productName}</strong></div>
+                <div><span className="text-surface-500">نوع / زیرگروه:</span> <strong>{selectedLogDetail.variantLabel || 'قیمت واحد'}</strong></div>
                 <div><span className="text-surface-500">شاخص CRM:</span> <strong className="font-mono">#{selectedLogDetail.crmProductIndex}</strong></div>
                 <div><span className="text-surface-500">قیمت پایه:</span> <strong>{formatNumber(selectedLogDetail.rawPrice)}</strong></div>
                 <div><span className="text-surface-500">قیمت ارسالی:</span> <strong>{formatNumber(selectedLogDetail.sentPrice)}</strong></div>
-                <div><span className="text-surface-500">نوع:</span> <strong>{OPERATION_LABELS[selectedLogDetail.operationType]}</strong></div>
+                <div><span className="text-surface-500">نوع عملیات:</span> <strong>{OPERATION_LABELS[selectedLogDetail.operationType]}</strong></div>
                 <div><span className="text-surface-500">وضعیت:</span> <strong>{STATUS_META[selectedLogDetail.status]?.label}</strong></div>
                 <div><span className="text-surface-500">تعداد بسته:</span> <strong>{selectedLogDetail.batchSize}</strong></div>
                 <div><span className="text-surface-500">updatedCount:</span> <strong>{selectedLogDetail.updatedCount ?? '—'}</strong></div>

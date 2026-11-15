@@ -67,15 +67,25 @@ export function PriceEditor() {
       
       await db.updateSettings({ lastUpdated: new Date().toISOString() });
 
-      const crmConnectedChanged = changedProducts.filter(id => {
+      let crmConnectedVariantChanges = 0;
+      for (const id of changedProducts) {
         const p = products.find(prod => prod.id === id);
-        return p?.crmProductIndex != null;
-      }).length;
+        if (!p) continue;
+        const mappings = p.crmMappings || [];
+        const lambChanged = edits[id].priceLamb !== p.priceLamb;
+        const twoTeethChanged = edits[id].priceTwoTeeth !== p.priceTwoTeeth;
+        if (lambChanged && mappings.some(m => m.priceType === 'single' || m.priceType === 'lamb')) {
+          crmConnectedVariantChanges++;
+        }
+        if (twoTeethChanged && mappings.some(m => m.priceType === 'two_teeth')) {
+          crmConnectedVariantChanges++;
+        }
+      }
       
       setToast({
         type: 'success',
-        message: crmConnectedChanged > 0
-          ? `قیمت‌ها با موفقیت ذخیره شدند (${crmConnectedChanged} قلم متصل به CRM در صف همگام‌سازی قرار گرفت).`
+        message: crmConnectedVariantChanges > 0
+          ? `قیمت‌ها با موفقیت ذخیره شدند (${crmConnectedVariantChanges} نوع/قلم متصل به CRM در صف همگام‌سازی قرار گرفت).`
           : 'قیمت‌ها با موفقیت ذخیره شدند.'
       });
       setTimeout(() => setToast(null), 4000);

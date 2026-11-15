@@ -516,6 +516,205 @@ async function runTests() {
     );
 
     await new Promise<void>(resolve => retryServer.close(() => resolve()));
+
+    // =========================================================================
+    // MULTI-VARIANT CRM INDEX TESTS (e.g., بره + دودندان)
+    // =========================================================================
+    const multiProdRes = await fetch(`${BASE_URL}/api/products`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        categoryId: 'cat_1',
+        name: 'ران معمولی تستی',
+        hasLamb: true,
+        hasTwoTeeth: true,
+        crmLambIndex: 99011,
+        crmTwoTeethIndex: 99012,
+      }),
+    });
+    const multiProd = await multiProdRes.json();
+    if (multiProd?.id) createdProductIds.push(multiProd.id);
+    assert(
+      multiProdRes.status === 200 &&
+        multiProd.crmLambIndex === 99011 &&
+        multiProd.crmTwoTeethIndex === 99012 &&
+        Array.isArray(multiProd.crmMappings) &&
+        multiProd.crmMappings.length === 2,
+      'Created multi-variant product with independent CRM indices (بره: 99011, دودندان: 99012)'
+    );
+
+    // Same index for both variants of same product -> rejected 409
+    const selfDupRes = await fetch(`${BASE_URL}/api/products`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        categoryId: 'cat_1',
+        name: 'محصول تکراری داخلی',
+        hasLamb: true,
+        hasTwoTeeth: true,
+        crmLambIndex: 99020,
+        crmTwoTeethIndex: 99020,
+      }),
+    });
+    const selfDupJson = await selfDupRes.json();
+    assert(
+      selfDupRes.status === 409 &&
+        selfDupJson.error.includes('بره') &&
+        selfDupJson.error.includes('دودندان'),
+      `Duplicate index across two variants of same product rejected (409): "${selfDupJson.error}"`
+    );
+
+    // Cross-product duplicate check includes BOTH product name and variant label
+    const crossDupRes = await fetch(`${BASE_URL}/api/products`, {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        categoryId: 'cat_1',
+        name: 'سردست تستی تکراری',
+        hasLamb: true,
+        hasTwoTeeth: true,
+        crmLambIndex: 99021,
+        crmTwoTeethIndex: 99011,
+      }),
+    });
+    const crossDupJson = await crossDupRes.json();
+    assert(
+      crossDupRes.status === 409 &&
+        crossDupJson.error.includes('ران معمولی تستی') &&
+        crossDupJson.error.includes('بره'),
+      `Cross-product duplicate variant index rejected (409) with product + variant name: "${crossDupJson.error}"`
+    );
+
+    // Re-open mock server to verify per-variant price transmission
+    mockPayloads = [];
+    const multiMockServer = http.createServer((req, res) => {
+      if (req.method === 'POST' && req.url === '/Product/Action/SetProductPrices') {
+        let body = '';
+        req.on('data', c => (body += c));
+        req.on('end', () => {
+          const parsed = JSON.parse(body);
+          mockPayloads.push(parsed);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              data: { updatedCount: Object.keys(parsed).length },
+              success: true,
+              code: 0,
+              msg: '',
+              error: '',
+            })
+          );
+        });
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+    await new Promise<void>(resolve => multiMockServer.listen(mockPort, '127.0.0.1', () => resolve()));
+
+    try {
+      // A) Update ONLY بره (priceLamb=250) -> MUST send ONLY "99011"
+      mockPayloads = [];
+      await fetch(`${BASE_URL}/api/products/prices`, {
+        method: 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify({
+          updates: [{ id: multiProd.id, priceLamb: 250, priceTwoTeeth: null }],
+        }),
+      });
+      await sleep(700);
+      assert(
+        mockPayloads.length === 1 &&
+          mockPayloads[0]['99011'] === 250000 &&
+          mockPayloads[0]['99012'] === undefined,
+        `Updating only بره sent ONLY CRM index 99011 (got ${JSON.stringify(mockPayloads)})`
+      );
+
+      // B) Update ONLY دودندان (priceTwoTeeth=380, keeping priceLamb=250) -> MUST send ONLY "99012"
+      mockPayloads = [];
+      await fetch(`${BASE_URL}/api/products/prices`, {
+        method: 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify({
+          updates: [{ id: multiProd.id, priceLamb: 250, priceTwoTeeth: 380 }],
+        }),
+      });
+      await sleep(700);
+      assert(
+        mockPayloads.length === 1 &&
+          mockPayloads[0]['99012'] === 380000 &&
+          mockPayloads[0]['99011'] === undefined,
+        `Updating only دودندان sent ONLY CRM index 99012 (got ${JSON.stringify(mockPayloads)})`
+      );
+
+      // C) Update BOTH variants -> MUST send BOTH in one batch
+      mockPayloads = [];
+      await fetch(`${BASE_URL}/api/products/prices`, {
+        method: 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify({
+          updates: [{ id: multiProd.id, priceLamb: 260, priceTwoTeeth: 390 }],
+        }),
+      });
+      await sleep(700);
+      assert(
+        mockPayloads.length === 1 &&
+          mockPayloads[0]['99011'] === 260000 &&
+          mockPayloads[0]['99012'] === 390000,
+        `Updating both بره & دودندان sent both 99011 & 99012 in one batch (got ${JSON.stringify(mockPayloads)})`
+      );
+
+      // D) Manual bulk sync includes both variant indices independently
+      mockPayloads = [];
+      const multiSyncAllRes = await fetch(`${BASE_URL}/api/crm/sync-all`, { method: 'POST', headers: authHeaders });
+      const multiSyncAllJson = await multiSyncAllRes.json();
+      assert(
+        multiSyncAllRes.status === 200 &&
+          multiSyncAllJson.succeeded >= 4 &&
+          mockPayloads[0]?.['99011'] === 260000 &&
+          mockPayloads[0]?.['99012'] === 390000,
+        'Bulk sync sends both variant prices (99011 & 99012) alongside single-type products'
+      );
+
+      // E) Independent sync logs per variant & clearing one variant frees its index
+      const multiLogsJson = await (
+        await fetch(`${BASE_URL}/api/crm/logs?productId=${multiProd.id}`, { headers: authHeaders })
+      ).json();
+      const hasLambLog = multiLogsJson.items.some((l: any) => l.priceType === 'lamb' && l.crmProductIndex === 99011);
+      const hasTwoTeethLog = multiLogsJson.items.some((l: any) => l.priceType === 'two_teeth' && l.crmProductIndex === 99012);
+      assert(hasLambLog && hasTwoTeethLog, 'Logs track بره (99011) and دودندان (99012) independently');
+
+      const clearVariantRes = await fetch(`${BASE_URL}/api/products/${multiProd.id}`, {
+        method: 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify({
+          name: 'ران معمولی تستی',
+          categoryId: 'cat_1',
+          hasLamb: true,
+          hasTwoTeeth: true,
+          crmLambIndex: 99011,
+          crmTwoTeethIndex: null,
+        }),
+      });
+      assert(clearVariantRes.status === 200, 'Cleared دودندان CRM index while preserving بره index 99011');
+
+      const reuseFreedRes = await fetch(`${BASE_URL}/api/products`, {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({
+          categoryId: 'cat_1',
+          name: 'محصول جایگزین شاخص آزادشده',
+          hasLamb: false,
+          hasTwoTeeth: false,
+          crmProductIndex: 99012,
+        }),
+      });
+      const reuseFreedJson = await reuseFreedRes.json();
+      if (reuseFreedJson?.id) createdProductIds.push(reuseFreedJson.id);
+      assert(reuseFreedRes.status === 200, 'Freed variant CRM index (99012) can be reassigned to another product');
+    } finally {
+      await new Promise<void>(resolve => multiMockServer.close(() => resolve()));
+    }
   } finally {
     // Cleanup test products, test logs, test price_history, and restore original CRM settings
     try {
@@ -547,9 +746,10 @@ async function runTests() {
     for (const pid of createdProductIds) {
       sqliteDb.prepare('DELETE FROM crm_sync_logs WHERE productId = ?').run(pid);
       sqliteDb.prepare('DELETE FROM price_history WHERE productId = ?').run(pid);
+      sqliteDb.prepare('DELETE FROM product_crm_mappings WHERE productId = ?').run(pid);
       sqliteDb.prepare('DELETE FROM products WHERE id = ?').run(pid);
     }
-    sqliteDb.prepare("DELETE FROM crm_sync_logs WHERE crmProductIndex IN (99001, 99002, 99003)").run();
+    sqliteDb.prepare("DELETE FROM crm_sync_logs WHERE crmProductIndex IN (99001, 99002, 99003, 99011, 99012)").run();
   }
 
   // 15. Verify original database rows preserved
