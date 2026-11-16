@@ -24,6 +24,9 @@ import {
   Loader2,
   Filter,
   Eye,
+  EyeOff,
+  KeyRound,
+  Trash2,
   X,
   Check,
   Info,
@@ -79,6 +82,9 @@ export function CrmSync() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [retryingLogId, setRetryingLogId] = useState<string | null>(null);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [clearSavedKey, setClearSavedKey] = useState(false);
 
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'warning'; message: string } | null>(null);
 
@@ -243,9 +249,20 @@ export function CrmSync() {
     if (!settingsForm) return;
     try {
       setIsSavingSettings(true);
-      const updated = await db.updateCrmSettings(settingsForm);
+      const payload: Partial<CrmSettings> & { apiKey?: string; clearApiKey?: boolean } = {
+        ...settingsForm,
+      };
+      if (clearSavedKey) {
+        payload.clearApiKey = true;
+      } else if (apiKeyInput.trim()) {
+        payload.apiKey = apiKeyInput.trim();
+      }
+      const updated = await db.updateCrmSettings(payload);
       setCrmSettings(updated);
       setSettingsForm(updated);
+      setApiKeyInput('');
+      setShowApiKey(false);
+      setClearSavedKey(false);
       showToast('success', 'تنظیمات اتصال و همگام‌سازی CRM با موفقیت ذخیره شد.');
       await fetchAll();
     } catch (err: any) {
@@ -726,7 +743,7 @@ export function CrmSync() {
           <div className="border-b border-surface-200 dark:border-surface-800 pb-4">
             <h2 className="text-lg font-bold text-surface-900 dark:text-white">پیکربندی اتصال و سیاست همگام‌سازی CRM</h2>
             <p className="text-xs text-surface-500 mt-1">
-              آدرس API، واحد قیمت، محدودیت دسته‌بندی درخواست‌ها و تنظیمات تلاش مجدد در این بخش مدیریت می‌شوند. مقادیر محرمانه احراز هویت تنها از متغیرهای محیطی سرور خوانده می‌شوند.
+              آدرس API، هدر و کلید احراز هویت (مانند X-API-KEY)، واحد قیمت، محدودیت دسته‌بندی درخواست‌ها و تنظیمات تلاش مجدد در این بخش مدیریت می‌شوند.
             </p>
           </div>
 
@@ -886,34 +903,136 @@ export function CrmSync() {
               </select>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-surface-700 dark:text-surface-300">نوع احراز هویت API مقصد</label>
-              <select
-                value={settingsForm.authType}
-                onChange={e => setSettingsForm({ ...settingsForm, authType: e.target.value as any })}
-                className="w-full px-3 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 dark:text-white text-xs"
-              >
-                <option value="none">بدون احراز هویت هدر (پیش‌فرض فعلی)</option>
-                <option value="bearer">Bearer Token (خوانده‌شده از CRM_API_AUTH_TOKEN در سرور)</option>
-                <option value="api_key_header">هدر کلید API سفارشی (خوانده‌شده از CRM_API_AUTH_TOKEN)</option>
-              </select>
-              <p className="text-[11px] text-surface-400">
-                وضعیت توکن محیطی سرور:{' '}
-                <strong className={settingsForm.hasEnvAuthToken ? 'text-emerald-600' : 'text-surface-500'}>
-                  {settingsForm.hasEnvAuthToken ? 'تنظیم شده در Environment Variables' : 'تنظیم نشده'}
-                </strong>
-              </p>
-            </div>
+            {/* Authentication & Outbound API Key Card */}
+            <div className="md:col-span-2 p-4 rounded-2xl bg-surface-50 dark:bg-surface-800/50 border border-surface-200 dark:border-surface-700 space-y-4">
+              <div className="flex items-start gap-2.5">
+                <KeyRound className="w-5 h-5 text-primary shrink-0 mt-0.5" />
+                <div className="space-y-1 text-xs text-surface-700 dark:text-surface-300">
+                  <p className="font-bold text-sm">احراز هویت و کلید دسترسی API مقصد (CRM)</p>
+                  <p>
+                    اگر برنامه‌نویس CRM برای اتصال به سرویس مقصد هدر و کلید اختصاصی (مانند <code className="font-mono bg-surface-200/70 dark:bg-surface-700 px-1.5 py-0.5 rounded" dir="ltr">X-API-KEY</code>) ارائه کرده است، نوع احراز هویت را روی «هدر کلید API» قرار داده و نام هدر و مقدار کلید را وارد کنید. کلید شما به‌صورت امن روی سرور ذخیره می‌شود و فقط در درخواست‌های سمت سرور استفاده می‌گردد.
+                  </p>
+                </div>
+              </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold text-surface-700 dark:text-surface-300">نام هدر احراز هویت</label>
-              <input
-                type="text"
-                value={settingsForm.authHeaderName}
-                onChange={e => setSettingsForm({ ...settingsForm, authHeaderName: e.target.value })}
-                className="w-full px-3 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-surface-50 dark:bg-surface-800 dark:text-white font-mono text-xs text-left"
-                dir="ltr"
-              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-surface-700 dark:text-surface-300">نوع احراز هویت API مقصد</label>
+                  <select
+                    value={settingsForm.authType}
+                    onChange={e => {
+                      const nextType = e.target.value as CrmSettings['authType'];
+                      let nextHeader = settingsForm.authHeaderName;
+                      if (nextType === 'api_key_header' && (!nextHeader || nextHeader === 'Authorization')) {
+                        nextHeader = 'X-API-KEY';
+                      } else if (nextType === 'bearer' && (!nextHeader || nextHeader.toUpperCase() === 'X-API-KEY')) {
+                        nextHeader = 'Authorization';
+                      }
+                      setSettingsForm({
+                        ...settingsForm,
+                        authType: nextType,
+                        authHeaderName: nextHeader,
+                      });
+                    }}
+                    className="w-full px-3 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 dark:text-white text-xs"
+                  >
+                    <option value="none">بدون احراز هویت هدر</option>
+                    <option value="api_key_header">هدر کلید API (مانند X-API-KEY)</option>
+                    <option value="bearer">Bearer Token (هدر Authorization)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-surface-700 dark:text-surface-300">نام هدر احراز هویت (Header Name)</label>
+                  <input
+                    type="text"
+                    value={settingsForm.authHeaderName}
+                    onChange={e => setSettingsForm({ ...settingsForm, authHeaderName: e.target.value })}
+                    placeholder="X-API-KEY"
+                    className="w-full px-3 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 dark:text-white font-mono text-xs text-left"
+                    dir="ltr"
+                  />
+                </div>
+
+                <div className="space-y-1.5 md:col-span-2">
+                  <label className="text-xs font-bold text-surface-700 dark:text-surface-300">
+                    کلید API / توکن احراز هویت (API Key)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={showApiKey ? 'text' : 'password'}
+                        value={apiKeyInput}
+                        onChange={e => {
+                          setApiKeyInput(e.target.value);
+                          if (clearSavedKey) setClearSavedKey(false);
+                        }}
+                        autoComplete="new-password"
+                        placeholder={
+                          settingsForm.hasApiKey
+                            ? 'کلید قبلی روی سرور ذخیره شده است — برای تغییر، کلید جدید را وارد کنید'
+                            : 'مقدار کلید دریافتی از برنامه‌نویس CRM را اینجا وارد کنید...'
+                        }
+                        className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-surface-200 dark:border-surface-700 bg-white dark:bg-surface-900 dark:text-white font-mono text-xs text-left focus:outline-none focus:ring-2 focus:ring-primary/20"
+                        dir="ltr"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowApiKey(prev => !prev)}
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 p-1 text-surface-400 hover:text-surface-700 dark:hover:text-surface-200"
+                        title={showApiKey ? 'مخفی کردن کلید' : 'نمایش کلید'}
+                      >
+                        {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    {clearSavedKey ? (
+                      <div className="flex items-center gap-2 text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                        <span>کلید ذخیره‌شده پس از کلیک روی «ذخیره تنظیمات CRM» حذف خواهد شد.</span>
+                        <button
+                          type="button"
+                          onClick={() => setClearSavedKey(false)}
+                          className="underline font-bold"
+                        >
+                          لغو حذف
+                        </button>
+                      </div>
+                    ) : settingsForm.hasApiKey ? (
+                      <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 font-medium">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          کلید API فعال و ذخیره‌شده روی سرور:
+                          <code className="font-mono font-bold" dir="ltr">{settingsForm.apiKeyMasked}</code>
+                          <span className="text-[10px] opacity-80">
+                            ({settingsForm.apiKeySource === 'settings' ? 'ثبت‌شده در تنظیمات' : 'متغیر محیطی سرور'})
+                          </span>
+                        </span>
+                        {settingsForm.apiKeySource === 'settings' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setClearSavedKey(true);
+                              setApiKeyInput('');
+                            }}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 font-medium transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            حذف کلید
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-surface-500 dark:text-surface-400">
+                        {settingsForm.authType !== 'none'
+                          ? 'هنوز کلیدی ثبت نشده است؛ برای ارسال هدر احراز هویت، کلید را وارد و ذخیره کنید.'
+                          : 'در حال حاضر کلید API ثبت نشده است.'}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-1.5">

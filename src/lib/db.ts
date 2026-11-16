@@ -61,6 +61,9 @@ export interface CrmSettings {
   debounceMs: number;
   invalidIndexPolicy: 'needs_review' | 'fail_batch';
   hasEnvAuthToken?: boolean;
+  hasApiKey?: boolean;
+  apiKeySource?: 'settings' | 'env' | 'none';
+  apiKeyMasked?: string | null;
 }
 
 export interface CrmSyncLog {
@@ -479,7 +482,7 @@ class APIClient {
     return this.request<CrmSettings>('/crm/settings');
   }
 
-  async updateCrmSettings(data: Partial<CrmSettings>): Promise<CrmSettings> {
+  async updateCrmSettings(data: Partial<CrmSettings> & { apiKey?: string; clearApiKey?: boolean }): Promise<CrmSettings> {
     return this.request<CrmSettings>('/crm/settings', {
       method: 'PUT',
       body: JSON.stringify(data)

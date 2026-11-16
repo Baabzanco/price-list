@@ -1504,7 +1504,52 @@ export function getCrmSettings(): CrmSettings {
   return merged;
 }
 
-export function updateCrmSettings(newSettings: Partial<CrmSettings>): CrmSettings {
+export function setCrmApiSecret(secret: string | null) {
+  const trimmed = secret ? secret.trim() : '';
+  if (!trimmed) {
+    db.prepare("DELETE FROM settings WHERE key = 'crm_auth_secret'").run();
+    return;
+  }
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run('crm_auth_secret', trimmed);
+}
+
+export function getCrmApiSecret(): { token: string | null; source: 'settings' | 'env' | 'none' } {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'crm_auth_secret'").get() as { value: string } | undefined;
+  const dbToken = row?.value ? row.value.trim() : '';
+  if (dbToken) {
+    return { token: dbToken, source: 'settings' };
+  }
+  const envToken = process.env.CRM_API_AUTH_TOKEN ? process.env.CRM_API_AUTH_TOKEN.trim() : '';
+  if (envToken) {
+    return { token: envToken, source: 'env' };
+  }
+  return { token: null, source: 'none' };
+}
+
+function maskSecret(token: string): string {
+  if (token.length <= 4) return '••••';
+  if (token.length <= 8) return `${'•'.repeat(token.length - 2)}${token.slice(-2)}`;
+  return `${token.slice(0, 3)}${'•'.repeat(Math.min(10, token.length - 7))}${token.slice(-4)}`;
+}
+
+export function getCrmApiSecretStatus(): {
+  hasApiKey: boolean;
+  apiKeySource: 'settings' | 'env' | 'none';
+  apiKeyMasked: string | null;
+  hasEnvAuthToken: boolean;
+} {
+  const { token, source } = getCrmApiSecret();
+  return {
+    hasApiKey: Boolean(token),
+    apiKeySource: source,
+    apiKeyMasked: token ? maskSecret(token) : null,
+    hasEnvAuthToken: Boolean(process.env.CRM_API_AUTH_TOKEN && process.env.CRM_API_AUTH_TOKEN.trim()),
+  };
+}
+
+export function updateCrmSettings(
+  newSettings: Partial<CrmSettings> & { apiKey?: string; clearApiKey?: boolean }
+): CrmSettings {
   const current = getCrmSettings();
   const merged: CrmSettings = { ...current };
 
@@ -1564,6 +1609,16 @@ export function updateCrmSettings(newSettings: Partial<CrmSettings>): CrmSetting
       throw new Error('نام هدر احراز هویت معتبر نیست.');
     }
     merged.authHeaderName = header;
+  }
+
+  if (newSettings.clearApiKey === true) {
+    setCrmApiSecret(null);
+  } else if (typeof newSettings.apiKey === 'string' && newSettings.apiKey.trim() !== '') {
+    const trimmedKey = newSettings.apiKey.trim();
+    if (/[\r\n]/.test(trimmedKey)) {
+      throw new Error('کلید API شامل کاراکترهای نامعتبر است.');
+    }
+    setCrmApiSecret(trimmedKey);
   }
 
   if (newSettings.timeoutMs !== undefined) {

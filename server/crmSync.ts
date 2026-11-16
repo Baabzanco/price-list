@@ -32,7 +32,7 @@ function buildAuthHeaders(settings: db.CrmSettings): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
-  const token = process.env.CRM_API_AUTH_TOKEN;
+  const { token } = db.getCrmApiSecret();
   if (!token || settings.authType === 'none') {
     return headers;
   }

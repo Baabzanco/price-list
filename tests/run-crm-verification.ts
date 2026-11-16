@@ -585,10 +585,12 @@ async function runTests() {
       `Cross-product duplicate variant index rejected (409) with product + variant name: "${crossDupJson.error}"`
     );
 
-    // Re-open mock server to verify per-variant price transmission
+    // Re-open mock server to verify per-variant price transmission & outbound X-API-KEY header
     mockPayloads = [];
+    let receivedMockHeaders: Array<http.IncomingHttpHeaders> = [];
     const multiMockServer = http.createServer((req, res) => {
       if (req.method === 'POST' && req.url === '/Product/Action/SetProductPrices') {
+        receivedMockHeaders.push(req.headers);
         let body = '';
         req.on('data', c => (body += c));
         req.on('end', () => {
@@ -712,6 +714,99 @@ async function runTests() {
       const reuseFreedJson = await reuseFreedRes.json();
       if (reuseFreedJson?.id) createdProductIds.push(reuseFreedJson.id);
       assert(reuseFreedRes.status === 200, 'Freed variant CRM index (99012) can be reassigned to another product');
+
+      // =========================================================================
+      // OUTBOUND CRM API KEY (X-API-KEY) STORAGE, MASKING & TRANSMISSION TESTS
+      // =========================================================================
+      const testSecretKey = 'secret-crm-test-key-9876';
+      const saveKeyRes = await fetch(`${BASE_URL}/api/crm/settings`, {
+        method: 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify({
+          authType: 'api_key_header',
+          authHeaderName: 'X-API-KEY',
+          apiKey: testSecretKey,
+        }),
+      });
+      const saveKeyRaw = await saveKeyRes.text();
+      const saveKeyJson = JSON.parse(saveKeyRaw);
+      assert(
+        saveKeyRes.status === 200 &&
+          saveKeyJson.hasApiKey === true &&
+          saveKeyJson.apiKeySource === 'settings' &&
+          typeof saveKeyJson.apiKeyMasked === 'string' &&
+          saveKeyJson.apiKeyMasked.includes('9876') &&
+          !saveKeyRaw.includes(testSecretKey),
+        'Saving CRM API Key stores secret securely and returns only masked preview'
+      );
+
+      const getSettingsRes = await fetch(`${BASE_URL}/api/crm/settings`, { headers: authHeaders });
+      const getSettingsRaw = await getSettingsRes.text();
+      const getSettingsJson = JSON.parse(getSettingsRaw);
+      assert(
+        getSettingsRes.status === 200 &&
+          getSettingsJson.hasApiKey === true &&
+          getSettingsJson.apiKeySource === 'settings' &&
+          !getSettingsRaw.includes(testSecretKey),
+        'GET /api/crm/settings never exposes raw CRM API key'
+      );
+
+      const backupRaw = await (await fetch(`${BASE_URL}/api/backup`, { headers: authHeaders })).text();
+      assert(!backupRaw.includes(testSecretKey) && !backupRaw.includes('crm_auth_secret'), 'GET /api/backup does not export CRM API secret');
+
+      // Transmit with X-API-KEY
+      receivedMockHeaders = [];
+      mockPayloads = [];
+      const keySyncRes = await fetch(`${BASE_URL}/api/crm/sync-all`, { method: 'POST', headers: authHeaders });
+      assert(
+        keySyncRes.status === 200 &&
+          receivedMockHeaders.length >= 1 &&
+          receivedMockHeaders[0]['x-api-key'] === testSecretKey,
+        `CRM outbound POST sent X-API-KEY header with saved key (got "${receivedMockHeaders[0]?.['x-api-key'] ? '[present]' : '[missing]'}")`
+      );
+
+      // Update unrelated setting without apiKey -> key must be preserved
+      const updateOtherRes = await fetch(`${BASE_URL}/api/crm/settings`, {
+        method: 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify({ debounceMs: 260 }),
+      });
+      const updateOtherJson = await updateOtherRes.json();
+      assert(
+        updateOtherRes.status === 200 &&
+          updateOtherJson.hasApiKey === true &&
+          updateOtherJson.apiKeySource === 'settings',
+        'Updating other CRM settings without apiKey preserves existing saved key'
+      );
+
+      receivedMockHeaders = [];
+      await fetch(`${BASE_URL}/api/crm/sync-all`, { method: 'POST', headers: authHeaders });
+      assert(
+        receivedMockHeaders.length >= 1 && receivedMockHeaders[0]['x-api-key'] === testSecretKey,
+        'Preserved CRM API key continues to be sent in X-API-KEY header'
+      );
+
+      // Clear API Key
+      const clearKeyRes = await fetch(`${BASE_URL}/api/crm/settings`, {
+        method: 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify({ clearApiKey: true }),
+      });
+      const clearKeyJson = await clearKeyRes.json();
+      const dbSecretRow = sqliteDb.prepare("SELECT value FROM settings WHERE key = 'crm_auth_secret'").get();
+      assert(
+        clearKeyRes.status === 200 &&
+          clearKeyJson.apiKeySource !== 'settings' &&
+          !dbSecretRow,
+        'clearApiKey: true removes crm_auth_secret row from SQLite'
+      );
+
+      receivedMockHeaders = [];
+      await fetch(`${BASE_URL}/api/crm/sync-all`, { method: 'POST', headers: authHeaders });
+      assert(
+        receivedMockHeaders.length >= 1 && !receivedMockHeaders[0]['x-api-key'],
+        'After clearing CRM API key, outbound POST omits X-API-KEY header'
+      );
     } finally {
       await new Promise<void>(resolve => multiMockServer.close(() => resolve()));
     }
@@ -733,6 +828,7 @@ async function runTests() {
         priceSource: origSettings.priceSource,
         authType: origSettings.authType,
         authHeaderName: origSettings.authHeaderName,
+        clearApiKey: origSettings.apiKeySource !== 'settings',
         timeoutMs: origSettings.timeoutMs,
         maxRetries: origSettings.maxRetries,
         retryDelayMs: origSettings.retryDelayMs,

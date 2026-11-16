@@ -542,7 +542,7 @@ async function startServer() {
       const settings = db.getCrmSettings();
       res.json({
         ...settings,
-        hasEnvAuthToken: Boolean(process.env.CRM_API_AUTH_TOKEN),
+        ...db.getCrmApiSecretStatus(),
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -552,11 +552,12 @@ async function startServer() {
   api.put('/crm/settings', authRequired, roleRequired(['admin']), (req: any, res) => {
     try {
       const updated = db.updateCrmSettings(req.body || {});
+      const secretStatus = db.getCrmApiSecretStatus();
       const auditIdentity = req.user.name ? `${req.user.name} (${req.user.username})` : req.user.username;
-      console.log(`[CRM_SYNC] Settings updated by ${auditIdentity}: liveTransmissionEnabled=${updated.liveTransmissionEnabled}, priceUnitConfirmed=${updated.priceUnitConfirmed}, multiplier=${updated.priceMultiplier}`);
+      console.log(`[CRM_SYNC] Settings updated by ${auditIdentity}: liveTransmissionEnabled=${updated.liveTransmissionEnabled}, priceUnitConfirmed=${updated.priceUnitConfirmed}, authType=${updated.authType}, hasApiKey=${secretStatus.hasApiKey}`);
       res.json({
         ...updated,
-        hasEnvAuthToken: Boolean(process.env.CRM_API_AUTH_TOKEN),
+        ...secretStatus,
       });
     } catch (e: any) {
       res.status(400).json({ error: e.message || 'خطا در ذخیره تنظیمات CRM.' });
